@@ -85,6 +85,10 @@ namespace NailsChekin.Models
         public static bool chkTaxOff = false;
         public static string tax_percent = "0";
 
+        //PINCODE
+        public static bool chkPincodeOn = true;
+        public static bool chkPincodeOff = false;
+
         //SURCHARGE
         public static bool chkSurChargeOn = false;
         public static bool chkSurChargeOff = false;

@@ -160,107 +160,6 @@ namespace NailsChekin
                 Run_RealTime();
         }
 
-        [STAThread]
-        static void MainBK()
-        {
-            TraceStep("Main() begin");
-            bool isDevRun = IsDevRun();
-
-            bool purgeOnly = Environment.CommandLine.IndexOf("--purgeOnly", StringComparison.OrdinalIgnoreCase) >= 0;
-
-            // ✅ purge-only mode (task elevated) - không mở UI
-            if (!isDevRun && purgeOnly)
-            {
-                var sw = Stopwatch.StartNew();
-                PurgeTrace("=== PurgeOnly START ===");
-                PurgeTrace("Cmd=" + Environment.CommandLine);
-
-                try
-                {
-                    // check elevated
-                    bool isAdmin = false;
-                    try
-                    {
-                        var wp = new System.Security.Principal.WindowsPrincipal(
-                                     System.Security.Principal.WindowsIdentity.GetCurrent());
-                        isAdmin = wp.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-                    }
-                    catch { }
-                    PurgeTrace("IsAdmin=" + isAdmin);
-
-                    //ConfigLocalHelper.LoadAllConfigToSystem();
-                    PurgeTrace("printer_name=" + (Constants.printer_name ?? ""));
-
-                    if (!string.IsNullOrWhiteSpace(Constants.printer_name))
-                    {
-                        int del = PrinterHelper.PurgeAllPrintJobs_WMI(2, 500);
-                        PurgeTrace("WMI deleted=" + del);
-
-                        bool hasSpool = false;
-                        try { hasSpool = PrinterHelper.HasSpoolFiles(); } catch { }
-                        PurgeTrace("HasSpoolFiles=" + hasSpool);
-
-                        if (del > 0 || hasSpool)
-                        {
-                            var sw2 = Stopwatch.StartNew();
-                            PrinterHelper.HardPurgeSpooler_Silent();
-                            PurgeTrace("HardPurge done in " + sw2.ElapsedMilliseconds + "ms");
-                        }
-                        else
-                        {
-                            PurgeTrace("HardPurge skipped");
-                        }
-                    }
-                    else
-                    {
-                        PurgeTrace("Skip purge (printer_name empty)");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PurgeTrace("ERROR: " + ex);
-                }
-                finally
-                {
-                    PurgeTrace("=== PurgeOnly END | " + sw.ElapsedMilliseconds + "ms ===");
-                }
-                return;
-            }
-
-            // ✅ App UI mode
-            if (!AcquireSingleInstanceMutex()) return;
-            TraceStep("AcquireSingleInstanceMutex done");
-
-            SetupFramework();
-
-            if (!isDevRun) ConfigCarshApp();
-
-            // ✅ tạo tasks sớm (không phụ thuộc internet)
-            if (!isDevRun)
-            {
-                try { AutoStartHelper.EnsureOptionB_Tasks("Ant Pay Retail", Application.ExecutablePath); }
-                catch (Exception ex) { LogHelper.SaveLOG_Crash(ex.ToString(), "EnsureOptionB_Tasks Exception"); }
-            }
-
-            // Sau đó mới check internet / load config
-            TraceStep("IsInternetAvailable begin");
-            if (!Utilitys.IsInternetAvailable())
-            {
-                TraceStep("IsInternetAvailable = false");
-                CustomMessageBox.Show("Internet is not available.");
-                return;
-            }
-            TraceStep("IsInternetAvailable done");
-
-            //TraceStep("LoadAllConfigToSystem begin");
-            //ConfigLocalHelper.LoadAllConfigToSystem();
-            //TraceStep("LoadAllConfigToSystem done");
-
-            TraceStep("Before Application.Run");
-            if (isDevRun) Run_TestMode();
-            else Run_RealTime();
-        }
-
         private static void RunPurgeOnlyMode()
         {
             var sw = Stopwatch.StartNew();
@@ -462,8 +361,8 @@ namespace NailsChekin
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new FormMain());
-            //Application.Run(new Popup.FormTest());
+            // chkPincodeOn = true → FormIntro (yêu cầu PIN), false → FormMain luôn
+            Application.Run(Popup.FormIntro.CreateStartupForm());
         }
 
         private static void Run_RealTime()
@@ -473,44 +372,8 @@ namespace NailsChekin
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new FormMain());
-
-            //var wi = WindowsIdentity.GetCurrent();
-            //var wp = new WindowsPrincipal(wi);
-
-            //bool runAsAdmin = wp.IsInRole(WindowsBuiltInRole.Administrator);
-            //if (!runAsAdmin)
-            //{
-            //    // It is not possible to launch a ClickOnce app as administrator directly,
-            //    // so instead we launch the app as administrator in a new process.
-            //    var processInfo = new ProcessStartInfo(Assembly.GetExecutingAssembly().CodeBase);
-
-            //    // The following properties run the new process as administrator
-            //    processInfo.UseShellExecute = true;
-            //    processInfo.Verb = "runas";
-
-            //    // Start the new process
-            //    try
-            //    {
-            //        Process.Start(processInfo);
-            //    }
-            //    catch (Exception)
-            //    {
-            //        // The user did not allow the application to run as administrator
-            //        MessageBox.Show("Sorry, but I don't seem to be able to start " +
-            //           "this program with administrator rights!");
-            //    }
-
-            //    // Shut down the current process
-            //    Application.Exit();
-            //}
-            //else
-            //{
-            //    //We are running as administrator
-            //    Application.EnableVisualStyles();
-            //    Application.SetCompatibleTextRenderingDefault(false);
-            //    Application.Run(new FormMain());
-            //}
+            // chkPincodeOn = true → FormIntro (yêu cầu PIN), false → FormMain luôn
+            Application.Run(Popup.FormIntro.CreateStartupForm());
         }
 
         #endregion

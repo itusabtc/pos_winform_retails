@@ -85,7 +85,7 @@
     <TargetZone>LocalIntranet</TargetZone>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>logo.ico</ApplicationIcon>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup />
   <PropertyGroup />
@@ -108,6 +108,7 @@
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
+  <PropertyGroup />
   <PropertyGroup />
   <PropertyGroup />
   <PropertyGroup>
@@ -571,6 +572,12 @@
     <Compile Include="Popup\FormFullPayment.designer.cs">
       <DependentUpon>FormFullPayment.cs</DependentUpon>
     </Compile>
+    <Compile Include="Popup\FormIntro.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Popup\FormIntro.Designer.cs">
+      <DependentUpon>FormIntro.cs</DependentUpon>
+    </Compile>
     <Compile Include="Popup\FormItemLockup.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1002,6 +1009,8 @@
   <ItemGroup>
     <None Include="Resources\View.bmp" />
     <None Include="Resources\view.png" />
+    <Content Include="ant_logo.ico" />
+    <Content Include="icon.ico" />
     <Content Include="logo.ico" />
     <None Include="Resources\arico-loading.gif" />
     <None Include="Resources\img_turn_full.bmp" />
@@ -1009,8 +1018,6 @@
     <None Include="Resources\turn_half_bg.jpg" />
     <None Include="Resources\turn_half_bg.png" />
     <None Include="Resources\turn_full_bg.png" />
-    <Content Include="Images\turn_full_bg.png" />
-    <Content Include="Images\turn_half_bg.png" />
     <None Include="Resources\ant_load.png" />
     <None Include="Resources\xnails_logo.png" />
     <None Include="Resources\ant_logo.png" />
@@ -1018,6 +1025,8 @@
     <None Include="Resources\border_1200x1600_1px.png" />
     <None Include="Resources\border_small_control.png" />
     <None Include="Resources\giphy_scanner.gif" />
+    <None Include="Resources\ant_logo.ico" />
+    <None Include="Resources\icon.ico" />
     <Content Include="Scripts\jquery-1.6.4-vsdoc.js" />
     <Content Include="Scripts\jquery-1.6.4.js" />
     <Content Include="Scripts\jquery-1.6.4.min.js" />

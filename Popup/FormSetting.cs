@@ -5,8 +5,6 @@ using System.Windows.Forms;
 using System.Deployment.Application;
 using System.Text;
 using System.Xml;
-using System.Reflection;
-using System.Threading;
 using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
 using CloverExamplePOS;
@@ -164,6 +162,12 @@ namespace NailsChekin.Popup
             ddlSurChargeUnit.Text       = Utilitys.GetConfig("surCharge_unit",       Constants.surCharge_unit);
             txtSurCharge_percent.Text   = Utilitys.GetConfig("surCharge_percent",    Constants.surCharge_percent);
             txtSurCharge_minAmount.Text = Utilitys.GetConfig("surCharge_minAmount",  Constants.surCharge_minAmount);
+
+            //Pincode
+            chkPincodeOn.Checked = Utilitys.GetConfig("chkPincodeOn", false);
+            chkPincodeOff.Checked = Utilitys.GetConfig("chkPincodeOff", true);
+
+
         }
 
         // Gọi API trên background thread — không block UI thread
@@ -206,6 +210,8 @@ namespace NailsChekin.Popup
             this.BeginInvoke(new Action(() =>
             {
                 btnClose.Location = new Point(this.Width - btnClose.Width - 10, btnClose.Location.Y);
+                btnLogout.Location = new Point(this.Width - btnClose.Width - btnLogout.Width - 30, btnLogout.Location.Y);
+
                 panelContent.Height = this.Height - lbTitle.Bottom - 20;
                 panelContent.Width  = this.Width - 20;
                 panelControls.Left  = (panelContent.Width  - panelControls.Width)  / 2;
@@ -276,6 +282,8 @@ namespace NailsChekin.Popup
             Constants.surCharge_percent       = txtSurCharge_percent.Text;
             Constants.surCharge_minAmount     = txtSurCharge_minAmount.Text;
             Constants.surCharge_unit          = ddlSurChargeUnit.Text;
+            Constants.chkPincodeOn = chkPincodeOn.Checked;
+            Constants.chkPincodeOff = chkPincodeOff.Checked;
 
             // Tạo thư mục config nếu chưa có
             Utilitys.CreateForderConfig();
@@ -304,6 +312,8 @@ namespace NailsChekin.Popup
             sb.AppendLine("appt_version_setting: "     + Constants.appt_version_setting);
             sb.AppendLine("quickmenu_option: "         + Constants.quickmenu_option);
             sb.AppendLine("using_system_credit: "      + Constants.using_system_credit);
+            sb.AppendLine("chkPincodeOn: "             + Constants.chkPincodeOn);
+            sb.AppendLine("chkPincodeOff: "            + Constants.chkPincodeOff);
             sb.AppendLine("chkTaxOn: "                 + Constants.chkTaxOn);
             sb.AppendLine("chkTaxOff: "                + Constants.chkTaxOff);
             sb.AppendLine("tax_percent: "              + Constants.tax_percent);

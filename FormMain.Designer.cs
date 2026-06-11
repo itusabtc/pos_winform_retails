@@ -106,6 +106,7 @@
             this.panelLayout_Left = new NailsChekin.MyControls.RoundPanel();
             this.panelCartItemsTouch = new NailsChekin.Models.Implements.KineticScrollPanel();
             this.panelStartScan = new System.Windows.Forms.Panel();
+            this.picStartScan = new System.Windows.Forms.PictureBox();
             this.tableHeader = new System.Windows.Forms.TableLayoutPanel();
             this.label1 = new System.Windows.Forms.Label();
             this.label2 = new System.Windows.Forms.Label();
@@ -118,6 +119,8 @@
             this.lbCart_CustomerName = new System.Windows.Forms.Label();
             this.panelLayout_Right = new NailsChekin.MyControls.RoundPanel();
             this.panelCart_Control = new System.Windows.Forms.Panel();
+            this.lbCart_ItemSold = new System.Windows.Forms.Label();
+            this.label7 = new System.Windows.Forms.Label();
             this.lbCart_SubTotal = new System.Windows.Forms.Label();
             this.label6 = new System.Windows.Forms.Label();
             this.btnCart_Method_SalonCredit = new NailsChekin.MyControls.ButtonRound();
@@ -153,9 +156,6 @@
             this.tabAdjust = new DevExpress.XtraBars.Navigation.NavigationPage();
             this.panelLayout_Footer = new System.Windows.Forms.Panel();
             this.panelLayout_Header = new System.Windows.Forms.Panel();
-            this.lbCart_ItemSold = new System.Windows.Forms.Label();
-            this.label7 = new System.Windows.Forms.Label();
-            this.picStartScan = new System.Windows.Forms.PictureBox();
             this.pictureBox1 = new System.Windows.Forms.PictureBox();
             ((System.ComponentModel.ISupportInitialize)(this.svgImageBox2)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.svgImageBox1)).BeginInit();
@@ -167,6 +167,7 @@
             this.panelLayout_Left.SuspendLayout();
             this.panelCartItemsTouch.SuspendLayout();
             this.panelStartScan.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.picStartScan)).BeginInit();
             this.tableHeader.SuspendLayout();
             this.panelCart_Header.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.svgCart_RemoveCustomer)).BeginInit();
@@ -174,7 +175,6 @@
             this.panelLayout_Right.SuspendLayout();
             this.panelCart_Control.SuspendLayout();
             this.panelCartAntDue.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picStartScan)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
@@ -1012,9 +1012,19 @@
             this.panelStartScan.Cursor = System.Windows.Forms.Cursors.Hand;
             this.panelStartScan.Location = new System.Drawing.Point(150, 101);
             this.panelStartScan.Name = "panelStartScan";
-            this.panelStartScan.Size = new System.Drawing.Size(331, 334);
+            this.panelStartScan.Size = new System.Drawing.Size(441, 462);
             this.panelStartScan.TabIndex = 4;
             this.panelStartScan.Visible = false;
+            // 
+            // picStartScan
+            // 
+            this.picStartScan.Image = global::NailsChekin.Properties.Resources.giphy_scanner;
+            this.picStartScan.Location = new System.Drawing.Point(26, 15);
+            this.picStartScan.Name = "picStartScan";
+            this.picStartScan.Size = new System.Drawing.Size(396, 422);
+            this.picStartScan.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
+            this.picStartScan.TabIndex = 0;
+            this.picStartScan.TabStop = false;
             // 
             // tableHeader
             // 
@@ -1197,6 +1207,30 @@
             this.panelCart_Control.Name = "panelCart_Control";
             this.panelCart_Control.Size = new System.Drawing.Size(736, 804);
             this.panelCart_Control.TabIndex = 1;
+            // 
+            // lbCart_ItemSold
+            // 
+            this.lbCart_ItemSold.AutoSize = true;
+            this.lbCart_ItemSold.Font = new System.Drawing.Font("Microsoft Sans Serif", 20F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbCart_ItemSold.ForeColor = System.Drawing.Color.SteelBlue;
+            this.lbCart_ItemSold.Location = new System.Drawing.Point(161, 45);
+            this.lbCart_ItemSold.Margin = new System.Windows.Forms.Padding(0);
+            this.lbCart_ItemSold.Name = "lbCart_ItemSold";
+            this.lbCart_ItemSold.Size = new System.Drawing.Size(30, 31);
+            this.lbCart_ItemSold.TabIndex = 189;
+            this.lbCart_ItemSold.Text = "0";
+            // 
+            // label7
+            // 
+            this.label7.AutoSize = true;
+            this.label7.Font = new System.Drawing.Font("Microsoft Sans Serif", 18F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.label7.ForeColor = System.Drawing.Color.SteelBlue;
+            this.label7.Location = new System.Drawing.Point(7, 48);
+            this.label7.Margin = new System.Windows.Forms.Padding(0);
+            this.label7.Name = "label7";
+            this.label7.Size = new System.Drawing.Size(148, 29);
+            this.label7.TabIndex = 188;
+            this.label7.Text = "ITEM SOLD:";
             // 
             // lbCart_SubTotal
             // 
@@ -1713,40 +1747,6 @@
             this.panelLayout_Header.Size = new System.Drawing.Size(1736, 46);
             this.panelLayout_Header.TabIndex = 9;
             // 
-            // lbCart_ItemSold
-            // 
-            this.lbCart_ItemSold.AutoSize = true;
-            this.lbCart_ItemSold.Font = new System.Drawing.Font("Microsoft Sans Serif", 20F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCart_ItemSold.ForeColor = System.Drawing.Color.SteelBlue;
-            this.lbCart_ItemSold.Location = new System.Drawing.Point(161, 45);
-            this.lbCart_ItemSold.Margin = new System.Windows.Forms.Padding(0);
-            this.lbCart_ItemSold.Name = "lbCart_ItemSold";
-            this.lbCart_ItemSold.Size = new System.Drawing.Size(30, 31);
-            this.lbCart_ItemSold.TabIndex = 189;
-            this.lbCart_ItemSold.Text = "0";
-            // 
-            // label7
-            // 
-            this.label7.AutoSize = true;
-            this.label7.Font = new System.Drawing.Font("Microsoft Sans Serif", 18F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.label7.ForeColor = System.Drawing.Color.SteelBlue;
-            this.label7.Location = new System.Drawing.Point(7, 48);
-            this.label7.Margin = new System.Windows.Forms.Padding(0);
-            this.label7.Name = "label7";
-            this.label7.Size = new System.Drawing.Size(148, 29);
-            this.label7.TabIndex = 188;
-            this.label7.Text = "ITEM SOLD:";
-            // 
-            // picStartScan
-            // 
-            this.picStartScan.Image = global::NailsChekin.Properties.Resources.giphy_scanner;
-            this.picStartScan.Location = new System.Drawing.Point(26, 15);
-            this.picStartScan.Name = "picStartScan";
-            this.picStartScan.Size = new System.Drawing.Size(285, 305);
-            this.picStartScan.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
-            this.picStartScan.TabIndex = 0;
-            this.picStartScan.TabStop = false;
-            // 
             // pictureBox1
             // 
             this.pictureBox1.Image = global::NailsChekin.Properties.Resources.arico_loading;
@@ -1784,6 +1784,7 @@
             this.panelLayout_Left.ResumeLayout(false);
             this.panelCartItemsTouch.ResumeLayout(false);
             this.panelStartScan.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.picStartScan)).EndInit();
             this.tableHeader.ResumeLayout(false);
             this.tableHeader.PerformLayout();
             this.panelCart_Header.ResumeLayout(false);
@@ -1795,7 +1796,6 @@
             this.panelCart_Control.PerformLayout();
             this.panelCartAntDue.ResumeLayout(false);
             this.panelCartAntDue.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.picStartScan)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             this.ResumeLayout(false);
 
