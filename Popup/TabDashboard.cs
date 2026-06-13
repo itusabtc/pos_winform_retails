@@ -27,7 +27,11 @@ namespace NailsChekin.Popup
         public async Task EnsureLoadedAsync(CancellationToken ct)
         {
             //if (_loaded) return;  //Phải reload chứ
+            // Clear() không dispose control cũ => dispose trước khi clear tránh leak khi reload tab
+            var oldControls = new System.Collections.Generic.List<System.Windows.Forms.Control>();
+            foreach (System.Windows.Forms.Control c in this.Controls) oldControls.Add(c);
             this.Controls.Clear();
+            foreach (var c in oldControls) c.Dispose();
 
             await _gate.WaitAsync(ct);
             try

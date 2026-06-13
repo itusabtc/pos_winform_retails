@@ -202,8 +202,8 @@ namespace NailsChekin.Popup
 
         private void btnClose_Click(object sender, EventArgs e)
         {
-            //Enable Parent Form
-            this.parentForm.EnableDisableControl(true);
+            //Enable Parent Form (parentForm null khi mở từ UCCustomerSearchResult)
+            this.parentForm?.EnableDisableControl(true);
 
             this.Dispose();
         }
@@ -266,8 +266,8 @@ namespace NailsChekin.Popup
                             'state':'" + txtNew_State.Text + @"',
                             'zipCode':'" + txtNew_Zipcode.Text + @"',
                             'city':'" + txtNew_City.Text + @"',
-                            'birthday_Day':'" + birthay_month + @"',
-                            'birthday_Month':'" + birthay_day + @"',
+                            'birthday_Day':'" + birthay_day + @"',
+                            'birthday_Month':'" + birthay_month + @"',
                             'referalCode':'" + txtNew_ReferralCode.Text + @"',
                             'bus_Name':'',
                             'bus_Phone':'',

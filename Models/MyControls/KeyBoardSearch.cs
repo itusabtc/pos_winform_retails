@@ -195,9 +195,35 @@ namespace NailsChekin.MyControls
 
         // ---- Key logic ----
 
+        // Value đang là pre-fill (SetValue overwrite): phím nhập đầu tiên sẽ thay thế toàn bộ,
+        // giống hành vi text đang được select trong TextBox
+        private bool _overwriteOnNextKey;
+
         private void HandleKey(string key)
         {
             string newVal = Value;
+
+            if (_overwriteOnNextKey)
+            {
+                _overwriteOnNextKey = false;
+
+                if (key == "<<")
+                {
+                    // backspace trên value đang "select" => xóa toàn bộ
+                    if (Value.Length > 0)
+                    {
+                        Value = string.Empty;
+                        PushToTarget();
+                        ValueChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                    if (SendKeyOnClick)
+                        KeyTapped?.Invoke(this, new KeyTappedEventArgs { Key = key, Value = Value });
+                    return;
+                }
+
+                // phím số / "." / operator đầu tiên: bỏ value cũ, bắt đầu nhập mới
+                newVal = string.Empty;
+            }
 
             if (key == "<<")
             {
@@ -239,6 +265,7 @@ namespace NailsChekin.MyControls
 
         public void Clear()
         {
+            _overwriteOnNextKey = false;
             if (Value.Length == 0) return;
             Value = string.Empty;
             PushToTarget();
@@ -255,9 +282,20 @@ namespace NailsChekin.MyControls
 
         public void SetValue(string text)
         {
+            _overwriteOnNextKey = false;
             Value = text ?? string.Empty;
             PushToTarget();
             ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Set value dạng pre-fill: phím nhập đầu tiên sẽ THAY THẾ toàn bộ value
+        /// (vd value = "22", bấm "1" => value = "1"). Backspace đầu tiên xóa hết.
+        /// </summary>
+        public void SetValue(string text, bool overwriteOnNextKey)
+        {
+            SetValue(text);
+            _overwriteOnNextKey = overwriteOnNextKey && Value.Length > 0;
         }
 
         // ---- Helpers ----

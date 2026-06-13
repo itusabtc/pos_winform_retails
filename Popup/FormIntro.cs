@@ -728,8 +728,8 @@ namespace NailsChekin.Popup
                 int iconSz = 38;
                 int iy = (h - iconSz) / 2;
 
-                // 3 status items chia đều 3/4 đầu thanh
-                int sectionW = (bar.Width - 170) / 3;
+                // 3 status items chia đều phần đầu thanh (chừa chỗ CHECK UPDATE + CLOSE bên phải)
+                int sectionW = (bar.Width - 360) / 3;
                 DrawStatusItem(g, 30 + sectionW * 0, iy, iconSz, _blue,  DrawWifiGlyph,    "ONLINE",            "System Connected");
                 DrawStatusItem(g, 30 + sectionW * 1, iy, iconSz, _green, DrawPrinterGlyph, "PRINTER READY",     "Receipts Enabled");
                 DrawStatusItem(g, 30 + sectionW * 2, iy, iconSz, _teal,  DrawDrawerGlyph,  "CASH DRAWER READY", "Drawer Connected");
@@ -742,15 +742,37 @@ namespace NailsChekin.Popup
                     g.DrawLine(pen, 30 + sectionW * 3 - 25, h / 4, 30 + sectionW * 3 - 25, h * 3 / 4);
                 }
 
-                // SETTINGS bên phải
+                // CHECK UPDATE: hiện version hiện tại, click để check
+                int ux = bar.Width - 340;
+                DrawStatusItem(g, ux, iy, iconSz, _blue, DrawUpdateGlyph,
+                    "CHECK UPDATE", "Version " + NailsChekin.Models.Helper.UpdateHelper.GetLocalVersionString());
+
+                // CLOSE bên phải
                 int gx = bar.Width - 150;
                 int gy = h / 2;
-                DrawGearGlyph(g, new Rectangle(gx, gy - 10, 20, 20), _blue);
+                DrawCloseGlyph(g, new Rectangle(gx, gy - 10, 20, 20), _red);
                 using (var f = new Font("Segoe UI", 10f, FontStyle.Bold))
-                using (var b = new SolidBrush(_blue))
-                    g.DrawString("SETTINGS", f, b, gx + 26, gy - 10);
+                using (var b = new SolidBrush(_red))
+                    g.DrawString("CLOSE", f, b, gx + 26, gy - 10);
             };
             bar.Resize += (s, e) => bar.Invalidate();
+            // vùng click: CHECK UPDATE + CLOSE
+            bar.MouseMove += (s, e) =>
+            {
+                var hitClose  = new Rectangle(bar.Width - 156, bar.Height / 2 - 16, 116, 32);
+                var hitUpdate = new Rectangle(bar.Width - 345, bar.Height / 2 - 20, 185, 40);
+                bar.Cursor = (hitClose.Contains(e.Location) || hitUpdate.Contains(e.Location))
+                    ? Cursors.Hand : Cursors.Default;
+            };
+            bar.MouseClick += (s, e) =>
+            {
+                var hitClose  = new Rectangle(bar.Width - 156, bar.Height / 2 - 16, 116, 32);
+                var hitUpdate = new Rectangle(bar.Width - 345, bar.Height / 2 - 20, 185, 40);
+                if (hitClose.Contains(e.Location))
+                    Application.Exit();
+                else if (hitUpdate.Contains(e.Location))
+                    CheckUpdateNow();
+            };
             outer.Controls.Add(bar);
             return outer;
         }
@@ -806,22 +828,53 @@ namespace NailsChekin.Popup
             }
         }
 
-        private static void DrawGearGlyph(Graphics g, Rectangle r, Color c)
+        // Mũi tên vòng tròn (refresh) — icon CHECK UPDATE
+        private static void DrawUpdateGlyph(Graphics g, Rectangle r, Color c)
         {
             int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
-            int rOut = r.Width / 2 - 1, rIn = r.Width / 5;
-            using (var pen = new Pen(c, 1.8f))
+            int rad = r.Width / 4 + 1;
+            using (var pen = new Pen(c, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawArc(pen, cx - rad, cy - rad, rad * 2, rad * 2, -50, 280);
+            // đầu mũi tên ở cuối cung
+            using (var b = new SolidBrush(c))
             {
-                g.DrawEllipse(pen, cx - rIn, cy - rIn, rIn * 2, rIn * 2);
-                for (int i = 0; i < 8; i++)
+                var pts = new[]
                 {
-                    double a  = i * Math.PI / 4;
-                    float x1 = cx + (float)(Math.Cos(a) * (rIn + 2));
-                    float y1 = cy + (float)(Math.Sin(a) * (rIn + 2));
-                    float x2 = cx + (float)(Math.Cos(a) * rOut);
-                    float y2 = cy + (float)(Math.Sin(a) * rOut);
-                    g.DrawLine(pen, x1, y1, x2, y2);
-                }
+                    new PointF(cx + rad + 3, cy - rad + 2),
+                    new PointF(cx + rad - 5, cy - rad + 4),
+                    new PointF(cx + rad + 1, cy - rad + 9),
+                };
+                g.FillPolygon(b, pts);
+            }
+        }
+
+        // ─── Check update ────────────────────────────────────────────────────
+        private bool _checkingUpdate;
+        private async void CheckUpdateNow()
+        {
+            if (_checkingUpdate) return;
+            _checkingUpdate = true;
+            try { await NailsChekin.Models.Helper.UpdateHelper.ManualCheckAsync(this); }
+            finally { _checkingUpdate = false; }
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            // Auto check version mới khi mở app (im lặng nếu không có / lỗi mạng)
+            NailsChekin.Models.Helper.UpdateHelper.AutoCheckOnStartup(this);
+        }
+
+        private static void DrawCloseGlyph(Graphics g, Rectangle r, Color c)
+        {
+            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            int rad = r.Width / 2 - 1;
+            using (var pen = new Pen(c, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                g.DrawEllipse(pen, cx - rad, cy - rad, rad * 2, rad * 2);
+                int k = rad / 2 + 1;
+                g.DrawLine(pen, cx - k, cy - k, cx + k, cy + k);
+                g.DrawLine(pen, cx - k, cy + k, cx + k, cy - k);
             }
         }
 

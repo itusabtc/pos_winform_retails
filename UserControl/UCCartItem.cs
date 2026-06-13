@@ -156,11 +156,7 @@ namespace NailsChekin.UserControl
 
         private void txtPrice_Click(object sender, EventArgs e)
         {
-            //txtPrice.ReadOnly = false;
-
-            string current_price = this.price;
-
-            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, current_price, "ChangePriceLocal");
+            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, this.price, "txtPrice", "ChangePriceLocal");
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
@@ -184,9 +180,7 @@ namespace NailsChekin.UserControl
 
         private void lbQty_Click(object sender, EventArgs e)
         {
-            string current_qty = this.quantity;
-
-            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, current_qty, "ChangeQtyLocal");
+            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, this.quantity, "lbQty", "ChangeQtyLocal");
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
@@ -283,7 +277,7 @@ namespace NailsChekin.UserControl
             }
             catch (Exception ex)
             {
-                Models.Helper.LogHelper.SaveLOG_Crash("Message: " + ex.Message + "\nStack Trace:" + ex.StackTrace + "\nInnerException:" + ex.InnerException.Message, "My Dispose Exception");
+                Models.Helper.LogHelper.SaveLOG_Crash("Message: " + ex.Message + "\nStack Trace:" + ex.StackTrace + "\nInnerException:" + (ex.InnerException?.Message ?? ""), "My Dispose Exception");
             }
         }
 

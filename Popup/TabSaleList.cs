@@ -86,7 +86,10 @@ namespace NailsChekin.Popup
 
         public void SendSearch(bool reload_update = false)
         {
+            // Clear() không dispose control cũ => leak handle sau mỗi lần search
+            var oldControls = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>().ToList();
             panelTicketsTouch.Content.Controls.Clear();
+            foreach (var old in oldControls) old.Dispose();
 
             //Search Item
             string DATA = @"{

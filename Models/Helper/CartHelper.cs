@@ -4,11 +4,8 @@ using com.clover.sdk.v3.payments;
 using NailsChekin.Models.ListModel;
 using NailsChekin.Models.Services;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Windows.Forms;
 
 namespace NailsChekin.Models.Helper
 {
@@ -466,6 +463,21 @@ namespace NailsChekin.Models.Helper
                 string error = responce;
                 return;
             }
+        }
+
+
+        public static string UpdateCartInfoSignalR(string jData)
+        {
+            //đồng bộ qua lại với app checkIn
+            string responce = Utilitys.CALL_API("Cart/UpdateCartInfo?paring_code=" + Constants.pairing_code, jData, "POST", true);
+            return responce;
+        }
+
+        public static string RemoveCustomerInfoSignalR()
+        {
+            //đồng bộ qua lại với app checkIn
+            string responce = Utilitys.CALL_API("Customer/removeCustomerV2?paring_code=" + Constants.pairing_code, "", "GET", true);
+            return responce;
         }
 
     }

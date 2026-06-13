@@ -38,6 +38,7 @@ namespace NailsChekin
 
         private CloverManager _clover;
         public bool cloverStatus = false;
+        private CloverPaymentProcessUI _processUI;
 
         public static string colorCodes = "Red__Blue";
         public string selected_ticket = "";
@@ -67,10 +68,8 @@ namespace NailsChekin
         public double total_pending = 0;  //Thanh toan nhieu lan
 
         public SynchronizationContext uiThread;
-        private CloverConnectorService _cloverService;
-        private CloverListenerHelper _cloverListener;
-        private CloverPaymentProcessUI _processUI;
-        private CartHelper _cart;
+       
+        //private CartHelper _cart;
 
         public string CurrentPairingToken = ""; // If you store & load this value, you can skip pairing codes on the device most of the time.
 
@@ -106,14 +105,16 @@ namespace NailsChekin
 
         private async void Form3_Load(object sender, EventArgs e)
         {
+            // Gán uiThread trước mọi nhánh — Clover/P5 callback cần nó kể cả khi vào nhánh login
+            uiThread = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+
             string store_id = NailsChekin.Models.Helper.ConfigLocalHelper.GetStoreConfig("store_id", "");
             string current_login = NailsChekin.Models.Helper.ConfigLocalHelper.GetStoreConfig("current_login", "");
 
             if (store_id.Trim().Length <= 0 || current_login.Equals("0"))
             {
-                FormLogin frm = new FormLogin(this);
-                frm.ShowDialog(this);
-                frm.Dispose();
+                using (FormLogin frm = new FormLogin(this))
+                    frm.ShowDialog(this);
             }
             else
             {
@@ -123,24 +124,24 @@ namespace NailsChekin
 
                 LayoutHelper.SetScale(physical, perceived, isMini);
 
-                uiThread = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
                 picLoading.Visible = true;
                 picLoading.BringToFront();
                 Application.DoEvents(); // Vẽ ngay
                 panelBackground.Visible = false; // Ẩn giao diện chính
                 this.SuspendLayout();
 
-                // Chạy xử lý nặng ở thread khác (tránh đơ UI)
+                // Chạy xử lý nặng ở thread khác (tránh đơ UI) — block này không được đụng UI control
                 await Task.Run(() =>
                 {
                     this.InitConfig();
                     this.InitFormData(false);  // Adjust_Screen đã chuyển ra UI thread
-                    PreloadBackground();       // Load ảnh đã cache
+                    PreloadBackgroundImages(); // Load ảnh đã cache
                 });
 
                 this.ResumeLayout();
 
                 // Chạy trực tiếp trên UI thread (await đã về UI thread rồi)
+                ApplyPanelTheme();
                 this.AddHeaderTemplateBar();
                 this.AddFooterTemplateBar();
                 StartBackground_CreditDevice_Init_Task();
@@ -164,6 +165,9 @@ namespace NailsChekin
             this.MainForm_Shown(sender, e);
 
             StartBackground_SocketIO_Task();
+
+            // Auto check version mới (chỉ chạy 1 lần/phiên — nếu FormIntro đã check thì bỏ qua)
+            UpdateHelper.AutoCheckOnStartup(this);
         }
 
         private async void FormMain_FormClosedAsync(object sender, FormClosedEventArgs e)
@@ -174,14 +178,34 @@ namespace NailsChekin
 
         private void FormMain_FormClosing(object sender, FormClosingEventArgs e)
         {
-            // Giải phóng Clover connector trước (không phụ thuộc printer)
-            try { _clover?.Dispose(); } catch { }
+            // Giải phóng Clover connector trước (không phụ thuộc printer):
+            // CleanupClover unhook toàn bộ event tránh callback bắn vào form đã đóng
+            try { CleanupClover(); } catch { }
 
             // Dừng và giải phóng timer barcode reset
             try { timerBarcodeReset?.Stop(); timerBarcodeReset?.Dispose(); } catch { }
 
             // Giải phóng CancellationTokenSource tab navigation
             try { _cts?.Cancel(); _cts?.Dispose(); _cts = null; } catch { }
+
+            // Hủy watcher timeout T2 (Task.Delay 8h giữ CTS nếu không cancel)
+            try { ClearT2PendingPayment(); _t2PaymentTimeoutCts?.Dispose(); _t2PaymentTimeoutCts = null; } catch { }
+
+            // Đóng các popup non-modal còn mở
+            try { pairingForm?.Dispose(); pairingForm = null; } catch { }
+            try { frmCreditProcessing?.Dispose(); frmCreditProcessing = null; } catch { }
+
+            // P5 LAN/PAIR: dừng reconnect loop + đóng socket (null trước để callback cũ không fire)
+            try
+            {
+                var oldP5 = p5Lib;
+                p5Lib = null;
+                if (oldP5 != null) _ = oldP5.DisconnectAndDisposeAsync();
+            }
+            catch { }
+
+            // P5 USB
+            try { if (p5UsbLib != null) { P5LibUsbMode.CleanupStaticResources(); p5UsbLib = null; } } catch { }
 
             // Chạy purge cho máy in — trong mọi trường hợp đóng app
             // (UserClosing, WindowsShutDown, TaskManagerClosing, ApplicationExitCall)
@@ -316,8 +340,8 @@ namespace NailsChekin
             // ⛳️ Trang nhanh (như TabHome) -> cho qua luôn, KHÔNG overlay
             if (IsInstantPage(target)) return;
 
-            // Hủy lần trước (nếu user bấm liên tiếp)
-            _cts?.Cancel();
+            // Hủy lần trước (nếu user bấm liên tiếp) — dispose CTS cũ tránh leak
+            try { _cts?.Cancel(); _cts?.Dispose(); } catch { }
             _cts = new System.Threading.CancellationTokenSource();
             var ct = _cts.Token;
 
@@ -382,16 +406,25 @@ namespace NailsChekin
             ConfigLocalHelper.MapConfigToLocalSystem(true);
 
             this.tax_percent = Core.TAX_PERCENT();
-            if (tax_percent <= 0)
+            this.tax_include = tax_percent > 0;
+
+            // Hàm này được gọi từ background thread (Form3_Load) => phần UI phải marshal về UI thread
+            void ApplyTaxUI()
             {
-                btnCart_Tax.Enabled = false;
-                btnCart_Tax.Title = "TAX (0.00%)";
-                this.tax_include = false;
+                if (tax_percent <= 0)
+                {
+                    btnCart_Tax.Enabled = false;
+                    btnCart_Tax.Title = "TAX (0.00%)";
+                }
+                else
+                {
+                    btnCart_Tax.Title = "TAX (" + tax_percent + "%)";
+                }
             }
-            else {
-                btnCart_Tax.Title = "TAX (" + tax_percent + "%)";
-                this.tax_include = true;
-            }
+            if (this.IsHandleCreated && this.InvokeRequired)
+                this.BeginInvoke((Action)ApplyTaxUI);
+            else
+                ApplyTaxUI();
 
             this.ReloadSurchargeOrDualPriceOrCashDiscountSetting();
         }
@@ -664,12 +697,14 @@ namespace NailsChekin
                 else
                     btnCart_Discount.Title = "DISCOUNT";
 
-                subTotal = Math.Round(subTotal - totalDiscount);
-                this.tax_redeem = tax_include ? Math.Round(((subTotal - totalDiscount) * (tax_percent / 100.0)), 2) : 0;
+                // Round 2 số lẻ (trước đây Math.Round không tham số làm tròn về số nguyên — sai tiền)
+                subTotal = Math.Round(subTotal - totalDiscount, 2);
+                // subTotal đã trừ discount ở trên — không trừ thêm lần nữa khi tính tax
+                this.tax_redeem = tax_include ? Math.Round(subTotal * (tax_percent / 100.0), 2) : 0;
                 if (this.tax_redeem > 0)
-                    btnCart_Tax.Title = "TAX (8.25%)" + Environment.NewLine + "$" + this.tax_redeem;
+                    btnCart_Tax.Title = "TAX (" + tax_percent + "%)" + Environment.NewLine + "$" + this.tax_redeem;
                 else
-                    btnCart_Tax.Title = "TAX (8.25%)";
+                    btnCart_Tax.Title = "TAX (" + tax_percent + "%)";
                 
                 subTotalIncludeTax = Math.Round(subTotal + this.tax_redeem, 2);
                 total = subTotalIncludeTax - totalCoupon - totalRedeemVoucher - this.salon_credit_redeem; 
@@ -686,7 +721,7 @@ namespace NailsChekin
                 {
                     lbCart_Total.Text = "$" + total;
                     lbCart_Paided.Text = "$" + total_pay_amount;
-                    lbCart_AmtDue.Text = "$" + Math.Round((total - total_pay_amount), 2).ToString();
+                    lbCart_AmtDue.Text = "$" + total;  // total đã trừ total_pay_amount ở trên — không trừ lần 2
                     this.CartEnableControl();
                 }
                 else
@@ -718,8 +753,59 @@ namespace NailsChekin
                 //        });
                 //    }
                 //}
+
+                CartHelper.UpdateCartInfoSignalR(this.Get_JCart_Current());
             }
             catch { }
+        }
+
+        public string Get_JCart_Current()
+        {
+            string items = "";
+            foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
+            {
+                items += @"{
+                                'orderId': 0,
+                                'itemId': " + control.item_id + @",
+                                'itemName': '" + control.item_name + @"',
+                                'qty': " + control.quantity + @",
+                                'price': " + Utilitys.getTotalAmount(control.price) + @",
+                                'priceDiscount': 0,
+                                'discount': 0,
+                                'subTotal': " + control.subTotal() + @",
+                                'isPromotion':" + (string.IsNullOrEmpty(control.isPromotion) ? "0" : control.isPromotion) + @",
+                                'scheme':'" + control.scheme + @"'
+                            },";
+            }
+
+            if (items.Trim().Length > 0)
+                items = items.Substring(0, items.Length - 1);
+
+            string DATA = @"{
+                                'id': 0,
+                                'orderDate': '2026-06-10T23:08:43.154Z',
+                                'comment': '',
+                                'customerId': " + (string.IsNullOrEmpty(this.customer_selected) ? "0" : this.customer_selected) + @",
+                                'customerName': '" + (string.IsNullOrEmpty(this.customer_name) ? "" : Regex.Replace(this.customer_name, "'", "")) + @"',
+                                'customerPhone': '',
+                                'orderStatus': 0,
+                                'subtotal': " + Utilitys.getTotalAmount(lbCart_SubTotal.Text) + @",
+                                'reward': 0, 
+                                'totalReward':" + this.reward_balance + @",  
+                                'discount': " + this.discount_redeem + @", 
+                                'giftcardNumber': '',
+                                'giftcardAmount': 0,
+                                'tax': " + this.tax_redeem + @",
+                                'taxPercent': '" + Constants.tax_percent + @"',
+                                'tip': 0,
+                                'orderTotal': " + Utilitys.getTotalAmount(lbCart_Total.Text) + @",
+                                'methodOfPayment': 0,
+                                'cash': 0,
+                                'charge': 0,
+                                'items': [" + items + @"],
+                                'paringCode': '" + Constants.pairing_code + @"' 
+                            }";
+            return DATA;
         }
 
         double reward_percent_discount = 0;
@@ -850,25 +936,40 @@ namespace NailsChekin
 
         #region Call Function From Childrend Usercontrol
        
+        /// <summary>
+        /// Chạy action trên UI thread an toàn: bỏ qua nếu form đã dispose / chưa có handle
+        /// (tránh InvalidOperationException khi callback từ background bắn về lúc form đang đóng).
+        /// </summary>
+        private void RunOnUi(Action action)
+        {
+            try
+            {
+                if (this.IsDisposed || !this.IsHandleCreated) return;
+                if (this.InvokeRequired)
+                    this.BeginInvoke(action);
+                else
+                    action();
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
         public void EnableDisableControl(bool enable)
         {
             try
             {
                 if (!enable)
                 {
-                    this.BeginInvoke(new Action(() =>
-                    {
-                        this.CartDisableControl();
-                    }));
+                    RunOnUi(() => this.CartDisableControl());
                 }
                 else
                 {
-                    this.BeginInvoke(new Action(() =>
+                    RunOnUi(() =>
                     {
                         waiting_clover_process = false;
                         if (CreditCardLib.GET_CREDIT_DEVICE() == CREDIT_DEVICE_TYPE.CLOVER && _processUI != null)
                         {
-                            _clover.Process.StopPayment(); // đóng popup
+                            _clover?.Process?.StopPayment(); // đóng popup
                         }
 
                         if (CreditCardLib.GET_CREDIT_DEVICE() == CREDIT_DEVICE_TYPE.CODE_PAY)
@@ -878,7 +979,7 @@ namespace NailsChekin
 
                         CartEnableControl();
                         this.HIDE_PAYMENT_NOW();
-                    }));
+                    });
                 }
             }
             catch (Exception ex)
@@ -896,346 +997,39 @@ namespace NailsChekin
 
         #region Web Socket
 
-        public string caller_id_book_phone_number_calling = "";
-        public DateTime caller_id_book_phone_number_calling_timer;
         private void ProcessSocketIO_Message(string data)
         {
-            //if (!Utilitys.IsValidJson(data))
-            //    return;
+            if (!Utilitys.IsValidJson(data))
+                return;
 
-            //string storeId = JObject.Parse(data)["storeId"].ToString();
-            //string action = JObject.Parse(data)["type"].ToString();
-            //string meta_data = JObject.Parse(data)["data"] == null ? "" : JObject.Parse(data)["data"].ToString();
+            string storeId = JObject.Parse(data)["storeId"].ToString();
+            string action = JObject.Parse(data)["type"].ToString();
+            string meta_data = JObject.Parse(data)["data"] == null ? "" : JObject.Parse(data)["data"].ToString();
 
-            ////Check Control Type: Customer / Staff
-            //if (storeId.Contains(Constants.pos_store_id) || storeId.Equals(Constants.codepay_store_no))
-            //{
-            //    if (action.Equals("CustomerSignIn") || action.Equals("CustomerReload"))
-            //    {
-            //        this.InitCustomers();
-            //    }
-            //    else if (action.Equals("StaffSignIn") || action.Equals("StaffSignOut"))
-            //    {
-            //        this.InitStaffs();
-            //    }
-            //    else if (action.Equals("CustomerAndStaffReload") || action.Equals("CustomerSignInAndPrint"))
-            //    {
-            //        if (action.Equals("CustomerAndStaffReload"))
-            //        {
-            //            this.InitStaffs();
-            //        }
-
-            //        this.InitCustomers();
-
-            //        if (Utilitys.IsValidJson(meta_data))
-            //        {
-            //            JObject jObject = JObject.Parse(meta_data);
-
-            //            //Show IsBlack
-            //            string isBlack = jObject["isBlack"] == null ? "" : jObject["isBlack"].ToString();
-            //            string black_note = jObject["black_note"] == null ? "" : jObject["black_note"].ToString();
-
-            //            if (isBlack.Equals("1") && !string.IsNullOrEmpty(black_note))  //NOT SHOW ??????
-            //            {
-            //                //this.BeginInvoke(new Action(() => CustomMessageBox.Show(black_note, "CUSTOMER BLACK NOTE", MessageBoxButtons.OK)));
-
-            //                Thread _thread = new Thread(() =>
-            //                {
-            //                    Application.Run(new FormCustomerBlack(black_note));
-            //                });
-            //                _thread.SetApartmentState(ApartmentState.STA);
-            //                _thread.Start();
-            //            }
-
-            //            //Print after customer checkIn ==> cài 2 máy cùng nhận socket sẽ bị in 2 lần
-            //            if (ConfigLocalHelper.GetConfig("chkReceiptCusCheckin", true))
-            //            {
-            //                string customerId = jObject["customerId"] == null ? "" : jObject["customerId"].ToString();
-            //                if (!string.IsNullOrEmpty(customerId))
-            //                    navPrinterStatus.Caption = PrinterLocalHelper.PrintDirectCheckIn(customerId);
-            //            }
-            //        }
-            //    }
-            //    else if (action.Equals("ApptDeposit"))
-            //    {
-            //        JObject jObject = JObject.Parse(meta_data);
-            //        string apptId = jObject["apptId"].ToString();
-            //        string amountDeposit = jObject["amountDeposit"].ToString();
-
-            //        FormCollection fc = Application.OpenForms;
-            //        foreach (Form frm in fc)
-            //        {
-            //            //iterate through
-            //            if (frm.Name == "FormAppoimentsV3")
-            //            {
-            //                this.BeginInvoke(new Action(() => frm.Dispose()));
-            //            }
-            //        }
-
-            //        //CustomMessageBox.Show("Deposit !!! " + amountDeposit + " apptId: " + apptId);
-            //        Console.WriteLine("Deposit !!! " + amountDeposit + " apptId: " + apptId);
-            //        this.Appt_Payment(apptId, amountDeposit);
-            //    }
-            //    else if (action.Equals("CodePay_Notify"))
-            //    {
-            //        if( Core.GET_POS_ROLE() == POS_ROLE.PRIMARY )
-            //            CreditCardLib.CodePay_Process_Notify(meta_data, this);
-            //    }
-            //    else if (action.Equals("T2-POS"))
-            //    {
-            //        if (Core.GET_POS_ROLE() == POS_ROLE.PRIMARY && !string.IsNullOrEmpty(meta_data))
-            //        {
-            //            LogHelper.SaveLOG_CodePay(data, "T2-POS");
-            //            //string print = JObject.Parse(data)["print"] == null ? "{}" : JObject.Parse(data)["print"].ToString();
-            //            //if (Utilitys.IsValidJson(print) && JObject.Parse(print)["print_type"].ToString().Equals("confirm_pos"))
-            //            //{
-            //            //    this.OpenConfirm_Credit_Bill_FromSocket(meta_data, print);
-            //            //}
-            //            //else
-            //            //{
-            //            //    this.CloseConfirm_Credit_Bill_IfOpen();
-            //            //    CreditCardLib.CodePay_Process_T2_Notify(JObject.Parse(meta_data), JObject.Parse(print), this);
-            //            //}
-
-            //            try
-            //            {
-            //                JObject rootObj = JObject.Parse(data);
-            //                JObject metaObj = JObject.Parse(meta_data);
-
-            //                string printText = rootObj["print"] == null ? "{}" : rootObj["print"].ToString();
-            //                JObject printObj = Utilitys.IsValidJson(printText) ? JObject.Parse(printText) : new JObject();
-
-            //                string printType = printObj["print_type"] == null ? "" : printObj["print_type"].ToString();
-
-            //                // Trường hợp T2 yêu cầu mở confirm bill trên POS
-            //                if (printType.Equals("confirm_pos", StringComparison.OrdinalIgnoreCase))
-            //                {
-            //                    this.OpenConfirm_Credit_Bill_FromSocket(meta_data, printText);
-            //                    return;
-            //                }
-
-            //                // Các notify payment result bình thường
-            //                this.CloseConfirm_Credit_Bill_IfOpen();
-
-            //                // Lấy merchant_order_no từ T2 response
-            //                string merchant_order_no = metaObj["merchant_order_no"].ToString();
-
-            //                // 1. Check trước: T2 có bắn CANCEL / RESET / VOID payment hiện tại không
-            //                if (CreditCardLib.IsT2CancelPaymentNotify(metaObj))
-            //                {
-            //                    HandleT2CancelPaymentNotify(merchant_order_no, metaObj);
-
-            //                    CreditCardLib.CodePay_Process_T2_Notify(metaObj, printObj, this);
-            //                    return;
-            //                }
-            //                // Nếu response có merchant_order_no thì check đúng pending payment
-            //                if (!string.IsNullOrEmpty(merchant_order_no))
-            //                {
-            //                    bool canProcess = HandleT2SocketPaymentResponseBeforeProcess(merchant_order_no, metaObj);
-
-            //                    if (!canProcess)
-            //                    {
-            //                        LogHelper.SaveLOG_CodePay(
-            //                            "Ignore T2 response because merchant_order_no is not current pending payment. merchant_order_no=" + merchant_order_no,
-            //                            "T2-POS-IGNORE"
-            //                        );
-
-            //                        return;
-            //                    }
-            //                }
-            //                else
-            //                {
-            //                    // Nếu T2 chưa trả merchant_order_no, vẫn có thể xử lý legacy response,
-            //                    // nhưng nên log lại để kiểm tra.
-            //                    LogHelper.SaveLOG_CodePay(
-            //                        "T2 response missing merchant_order_no. meta_data=" + meta_data,
-            //                        "T2-POS-WARNING"
-            //                    );
-            //                }
-
-            //                CreditCardLib.CodePay_Process_T2_Notify(metaObj, printObj, this);
-            //            }
-            //            catch (Exception ex)
-            //            {
-            //                LogHelper.SaveLOG_CodePay(
-            //                    "T2-POS socket process error: " + ex.Message + Environment.NewLine + data,
-            //                    "T2-POS-ERROR"
-            //                );
-
-            //                CustomMessageBox.Show("T2 payment response error: " + ex.Message);
-            //            }
-
-            //        }
-            //    }
-            //    else if (action.Equals("T2-POS-VOID") || action.Equals("T2-POS-REFUND"))
-            //    {
-            //        if (Core.GET_POS_ROLE() == POS_ROLE.PRIMARY && !string.IsNullOrEmpty(meta_data))
-            //        {
-            //            string print = JObject.Parse(data)["print"] == null ? "{}" : JObject.Parse(data)["print"].ToString();
-            //            if (Utilitys.IsValidJson(print) && JObject.Parse(print)["print_type"].ToString().Equals("confirm_pos"))
-            //            {
-            //                //Thread _thread = new Thread(() =>
-            //                //{
-            //                //    Application.Run(new FormConfirmT2PrintBill(JObject.Parse(meta_data), JObject.Parse(print), this));
-            //                //});
-            //                //_thread.SetApartmentState(ApartmentState.STA);
-            //                //_thread.Start();
-
-            //                this.OpenConfirm_Credit_Bill_FromSocket(meta_data, print);
-            //            }
-            //            else
-            //            {
-            //                this.CloseConfirm_Credit_Bill_IfOpen();
-
-            //                string original_pos_body = JObject.Parse(data)["original_pos_body"] == null ? "{}" : JObject.Parse(data)["original_pos_body"].ToString();
-            //                CreditCardLib.CodePay_T2_Process_Void(JObject.Parse(meta_data), JObject.Parse(print), JObject.Parse(original_pos_body), frmTipsAdjust, this);
-            //            }
-            //        }
-            //    }
-            //    else if (action.Equals("PrinterSalaryWeb") || action.Equals("Payroll") || action.Equals("MonthlySaleReport") || action.Equals("DailySale"))
-            //    {
-            //        JObject jObject = JObject.Parse(meta_data);
-            //        string fromDate = jObject["fromDate"] == null ? "" : jObject["fromDate"].ToString();
-            //        string toDate = jObject["toDate"] == null ? "" : jObject["toDate"].ToString();
-            //        string staffIds = jObject["staffIds"] == null ? "" : jObject["staffIds"].ToString();
-
-            //        try
-            //        {
-            //            if (action.Equals("PrinterSalaryWeb"))
-            //            {
-            //                string pairCode = jObject["pairCode"] == null ? "" : jObject["pairCode"].ToString();
-            //                if (pairCode.Equals(Constants.pair_code))
-            //                {
-            //                    Dictionary<string, double> salary_total = new Dictionary<string, double>();
-            //                    PrinterLocalHelper.PrintDirectSalary(fromDate, toDate, staffIds, salary_total);
-
-            //                    if (salary_total.Count >= 1)
-            //                    {
-            //                        PrinterLocalHelper.PrintDirectSalaryTotal(fromDate, toDate, salary_total);
-            //                    }
-            //                }
-            //            }
-            //            else if (action.Equals("Payroll"))   //IN TU REPORT DUOI WINFORM MOI CO DEVICEID
-            //            {
-            //                string deviceId = jObject["deviceId"] == null ? "" : jObject["deviceId"].ToString();  //Winform
-            //                string pairCode = jObject["pairCode"] == null ? "" : jObject["pairCode"].ToString();   //Webform
-
-            //                if (deviceId.Equals(SystemInfo.GetDeviceId()) || pairCode.Equals(Constants.pair_code))
-            //                {
-            //                    Dictionary<string, double> salary_total = new Dictionary<string, double>();
-            //                    PrinterLocalHelper.PrintDirectSalary(fromDate, toDate, staffIds, salary_total);
-
-            //                    if (salary_total.Count >= 1)
-            //                    {
-            //                        PrinterLocalHelper.PrintDirectSalaryTotal(fromDate, toDate, salary_total);
-            //                    }
-            //                }
-            //            }
-            //            else if (action.Equals("DailySale"))
-            //            {
-            //                string deviceId = jObject["deviceId"] == null ? "" : jObject["deviceId"].ToString();
-            //                string pairCode = jObject["pairCode"] == null ? "" : jObject["pairCode"].ToString();
-            //                string pos_role = jObject["pos_role"] == null ? "" : jObject["pos_role"].ToString();
-
-            //                bool is_print = false;
-            //                if (string.IsNullOrEmpty(deviceId) && pairCode.Equals(Constants.pair_code))  //IN thẳng từ web, không có deviceId
-            //                {
-            //                    is_print = true;
-            //                }
-            //                else if (deviceId.Equals(SystemInfo.GetDeviceId())
-            //                        && (Core.GET_POS_ROLE().ToString().Equals(pos_role.ToUpper()) || string.IsNullOrEmpty(pos_role)))
-            //                {
-            //                    is_print = true;
-            //                }
-
-            //                if (is_print)
-            //                {
-            //                    //LogHelper.SaveLOG_Printer(meta_data, "PrintSocket Daily");
-            //                    if (Constants.sale_report_total_template)
-            //                    {
-            //                        PrinterLocalHelper.PrintDirectSaleReportTemplate2(fromDate, fromDate, staffIds);
-            //                    }
-            //                    else
-            //                    {
-            //                        string bill_staff_detail = "";
-            //                        bool isPrinting = false;
-            //                        if (!isPrinting)
-            //                        {
-            //                            isPrinting = true;
-            //                            PrinterLocalHelper.PrintDirectCloseOut("", fromDate, "All", ref bill_staff_detail);
-            //                            isPrinting = false;
-            //                        }
-            //                    }
-            //                }
-            //            }
-            //            else if (action.Equals("MonthlySaleReport"))
-            //            {
-            //                string deviceId = jObject["deviceId"] == null ? "" : jObject["deviceId"].ToString();
-            //                string pairCode = jObject["pairCode"] == null ? "" : jObject["pairCode"].ToString(); 
-            //                string pos_role = jObject["pos_role"] == null ? "" : jObject["pos_role"].ToString();
-
-            //                bool is_print = false;
-            //                if (string.IsNullOrEmpty(deviceId) && pairCode.Equals(Constants.pair_code))  //IN thẳng từ web, không có deviceId
-            //                {
-            //                    is_print = true;
-            //                }
-            //                else if (deviceId.Equals(SystemInfo.GetDeviceId())
-            //                        && (Core.GET_POS_ROLE().ToString().Equals(pos_role.ToUpper()) || string.IsNullOrEmpty(pos_role)))
-            //                {
-            //                    is_print = true;
-            //                }
-
-            //                if (is_print)
-            //                {
-            //                    //LogHelper.SaveLOG_Printer(meta_data, "PrintSocket Monthly");
-            //                    if (Constants.sale_report_total_template)
-            //                        PrinterLocalHelper.PrintDirectSaleReportTemplate2(fromDate, toDate, staffIds);
-            //                    else
-            //                    {
-            //                        bool isPrinting = false;
-            //                        if (!isPrinting)
-            //                        {
-            //                            isPrinting = true;
-            //                            PrinterLocalHelper.PrintDirectMonthlySaleReport(fromDate, toDate, staffIds);
-            //                            isPrinting = false;
-            //                        }
-            //                    }
-            //                }
-            //            }
-            //        }
-            //        catch (Exception ex) { }
-            //    }
-            //    else if (action.Equals("OpenCashDrawer"))
-            //    {
-            //        PrinterLocalHelper.OpenCashDrawer();
-            //    }
-            //    else if (action.Equals("caller_id_book"))
-            //    {
-            //        string phone = JObject.Parse(data)["phone"] == null ? "" : JObject.Parse(data)["phone"].ToString();
-            //        this.caller_id_book_phone_number_calling = phone;
-            //        this.caller_id_book_phone_number_calling_timer = DateTime.Now;
-
-            //        //RESET nếu book lịch thành công
-            //    }
-            //    else if (action.Equals("finalize-bill-print") )
-            //    {                   
-            //        if (Utilitys.IsValidJson(meta_data))
-            //        {
-            //            JObject jObject = JObject.Parse(meta_data);
-
-            //            string ticket_id = jObject["ticket_id"] == null ? "" : jObject["ticket_id"].ToString();
-            //            string nails_id = jObject["nails_id"] == null ? "" : jObject["nails_id"].ToString();
-
-            //            if (!string.IsNullOrEmpty(ticket_id) && !string.IsNullOrEmpty(nails_id))  
-            //            {
-            //                Task.Run(() =>
-            //                {
-            //                    PrinterLocalHelper.PrintDirectTicket(ticket_id, "staff", nails_id, "IN SERVICE", "0");
-            //                });
-            //            }
-            //        }
-            //    }
-            //}
+            //Check Control Type: Customer / Staff
+            if (storeId.Equals(Constants.pos_store_id))
+            {
+                if (action.Equals("CHECKIN") && data != null && !data.Equals("null"))
+                {
+                    if (JObject.Parse(meta_data)["paringCode"] != null)
+                    {
+                        if (JObject.Parse(meta_data)["paringCode"].ToString().Equals(Constants.pairing_code))
+                        {
+                            this.BeginInvoke(new Action(() => this.UpdateCustomers(meta_data)));
+                        }
+                    }
+                }
+                else if (action.Equals("CHECKOUT"))
+                {
+                    if (JObject.Parse(meta_data)["paringCode"] != null)
+                    {
+                        if (JObject.Parse(meta_data)["paringCode"].ToString().Equals(Constants.pairing_code))
+                        {
+                            this.BeginInvoke(new Action(() => this.ResetCustomers()));
+                        }
+                    }
+                }
+            }
         }
 
         public void CloseConfirm_Credit_Bill_IfOpen()
@@ -1295,6 +1089,9 @@ namespace NailsChekin
         {
             try
             {
+                if (this.paymentList == null)  //ResetAllData / POS_CHECKOUT có thể đã set null
+                    this.paymentList = new List<PaymentModel>();
+
                 this.pincode_payment = pincode;
                 this.current_clover_token = "";
                 this.surcharge_amount = 0;
@@ -2234,10 +2031,13 @@ namespace NailsChekin
                 return msg;
             }
 
-            // SUCCESS => SHOW PROCESSING
-            frmCreditProcessing = new FormCreditProcessing(this);
-            frmCreditProcessing.StartPosition = FormStartPosition.CenterScreen;
-            frmCreditProcessing.ShowDialog();
+            // SUCCESS => SHOW PROCESSING (form ShowDialog phải Dispose thủ công, không sẽ leak handle)
+            using (frmCreditProcessing = new FormCreditProcessing(this))
+            {
+                frmCreditProcessing.StartPosition = FormStartPosition.CenterScreen;
+                frmCreditProcessing.ShowDialog();
+            }
+            frmCreditProcessing = null;
 
             return msg ?? "";
             #endregion
@@ -2255,8 +2055,10 @@ namespace NailsChekin
         {
             try
             {
-                _t2PaymentTimeoutCts?.Cancel();
+                // Cancel + dispose CTS cũ trước khi thay (mỗi payment 1 CTS, không dispose sẽ leak)
+                var oldCts = _t2PaymentTimeoutCts;
                 _t2PaymentTimeoutCts = new CancellationTokenSource();
+                try { oldCts?.Cancel(); oldCts?.Dispose(); } catch { }
 
                 CancellationToken token = _t2PaymentTimeoutCts.Token;
 
@@ -2281,10 +2083,7 @@ namespace NailsChekin
                         if (!isStillPending)
                             return;
 
-                        this.BeginInvoke(new Action(() =>
-                        {
-                            HandleT2PaymentTimeout(merchant_order_no);
-                        }));
+                        RunOnUi(() => HandleT2PaymentTimeout(merchant_order_no));
                     }
                     catch (TaskCanceledException)
                     {
@@ -2292,12 +2091,12 @@ namespace NailsChekin
                     }
                     catch (Exception ex)
                     {
-                        this.BeginInvoke(new Action(() =>
+                        RunOnUi(() =>
                         {
                             ClearT2PendingPayment();
                             CodePay_ShowHide_Processing(false);
                             CustomMessageBox.Show("T2 timeout watcher error: " + ex.Message);
-                        }));
+                        });
                     }
                 });
             }
@@ -2555,11 +2354,12 @@ namespace NailsChekin
                 return "Không có kết nối được với máy cà thẻ" + Environment.NewLine + msg;
             }
 
-            // Thành công => show form processing
-            frmCreditProcessing = new FormCreditProcessing(this);
-            frmCreditProcessing.StartPosition = FormStartPosition.CenterScreen;
-            frmCreditProcessing.ShowDialog();
-            frmCreditProcessing.Dispose();
+            // Thành công => show form processing (using đảm bảo dispose cả khi ShowDialog throw)
+            using (frmCreditProcessing = new FormCreditProcessing(this))
+            {
+                frmCreditProcessing.StartPosition = FormStartPosition.CenterScreen;
+                frmCreditProcessing.ShowDialog();
+            }
             frmCreditProcessing = null;
 
             return msg;   // hoặc "" nếu bạn không cần dùng kết quả
@@ -2572,14 +2372,13 @@ namespace NailsChekin
                 this.BeginInvoke(new Action(() =>
                 {
                     //Remove ONLY CART ITEM, NO HEADER
-                    for (int i = 0; i <= 5; i++)  //Chạy 5 lần đảm bảo Clear
+                    //Snapshot ToList trước khi remove — không sửa collection khi đang duyệt (nguyên nhân trước đây phải chạy 5 lần)
+                    var cartItems = panelCartItemsTouch.Content.Controls.OfType<UCCartItem>().ToList();
+                    foreach (var control in cartItems)
                     {
-                        foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
-                        {
-                            panelCartItemsTouch.Content.Controls.Remove(control);
-                            control.MyDispose();
-                            control.Dispose();
-                        }
+                        panelCartItemsTouch.Content.Controls.Remove(control);
+                        control.MyDispose();
+                        control.Dispose();
                     }
 
                     this.selected_ticket = "";
@@ -2593,6 +2392,7 @@ namespace NailsChekin
                     this.voucher_redeem_amount = 0;
 
                     svgCart_RemoveCustomer.Visible = false;
+                    CartHelper.RemoveCustomerInfoSignalR();
                     lbCart_CustomerName.Text = "CUSTOMER: GUEST";
                     this.customer_selected = "";
                     this.reward_balance = "0";
@@ -2792,6 +2592,9 @@ namespace NailsChekin
         {
             try
             {
+                if (this.paymentList == null)
+                    this.paymentList = new List<PaymentModel>();
+
                 PaymentModel pm = new PaymentModel("CC", (payment?.amount ?? 0L) / 100.0);
                 pm.responce.Add(new CloverResponce(saleResp, surcharge_amount, surcharge_debit_amount, dual_price_amount));
                 paymentList.Add(pm);
@@ -2825,10 +2628,9 @@ namespace NailsChekin
 
             try { _clover?.Process?.StopPayment(); } catch { }
 
-            if (!reason.Equals("Request Canceled"))
+            if (!"Request Canceled".Equals(reason))  //null-safe
             {
-                if (InvokeRequired) BeginInvoke(new Action(() => ShowSaleFailed(reason)));
-                else ShowSaleFailed(reason);
+                RunOnUi(() => ShowSaleFailed(reason));
             }
         }
 
@@ -2967,7 +2769,7 @@ namespace NailsChekin
 
         public void OnPairingCode(string pairingCode)
         {
-            Invoke(new Action(() =>
+            RunOnUi(() =>
             {
                 pairingForm?.Dispose();
                 pairingForm = new AlertForm(this);
@@ -2976,8 +2778,7 @@ namespace NailsChekin
                 pairingForm.Show();
 
                 LogHelper.SaveLOG_Payment("OnPairingCode", "Enter this code on the Clover Mini: " + pairingCode);
-            }
-            ));
+            });
         }
 
         public void OnPairingSuccess(string pairingAuthToken)
@@ -2987,7 +2788,7 @@ namespace NailsChekin
             NailsChekin.Properties.Settings.Default.pairingAuthToken = pairingAuthToken;
             NailsChekin.Properties.Settings.Default.selectedConfig = "WS";
             NailsChekin.Properties.Settings.Default.Save();
-            Invoke(new Action(() => pairingForm?.Dispose()));
+            RunOnUi(() => pairingForm?.Dispose());
 
             LogHelper.SaveLOG_Payment("OnPairingSuccess", pairingAuthToken);
         }
@@ -2997,15 +2798,14 @@ namespace NailsChekin
             LogHelper.SaveLOG_Payment("OnPairingState", state + " MSG: " + message);
             if (state == "AUTHENTICATING")
             {
-                Invoke(new Action(() =>
+                RunOnUi(() =>
                 {
                     pairingForm?.Dispose();
                     pairingForm = new AlertForm(this);
                     pairingForm.Title = "Pairing Security Pin";
                     pairingForm.Label = message;
                     pairingForm.Show();
-                }
-                ));
+                });
             }
         }
 
@@ -3149,20 +2949,21 @@ namespace NailsChekin
                 }
                 else if (frmCreditProcessing != null && frmCreditProcessing.IsDisposed == false)
                 {
+                    void CloseAndDispose()
+                    {
+                        // Close không dispose form đã ShowDialog => phải Dispose tránh leak
+                        var frm = frmCreditProcessing;
+                        frmCreditProcessing = null;
+                        try { frm?.Close(); frm?.Dispose(); } catch { }
+                    }
+
                     if (this.InvokeRequired)
-                    {
-                        this.Invoke(new MethodInvoker(delegate
-                        {
-                            frmCreditProcessing.Close();
-                        }));
-                    }
+                        this.Invoke((MethodInvoker)CloseAndDispose);
                     else
-                    {
-                        frmCreditProcessing.Close();
-                    }
+                        CloseAndDispose();
                 }
             }
-            catch (Exception ex) { }
+            catch { }
         }
 
         #endregion
@@ -3392,7 +3193,7 @@ namespace NailsChekin
 
             if (m.Msg == WM_DEVICECHANGE)
             {
-                int wParam = m.WParam.ToInt32();
+                int wParam = unchecked((int)m.WParam.ToInt64()); // ToInt32 có thể throw OverflowException trên x64
 
                 if (wParam == DBT_DEVICEARRIVAL) // USB được cắm vào
                 {
@@ -3947,7 +3748,7 @@ namespace NailsChekin
 
         private void TenderUpdateCartAmount()
         {
-            Invoke(new Action(() => {
+            RunOnUi(() => {
                 //Cash Discount, Dual Price thay doi theo Tender
                 btnCart_Method_Cash.Title = "CASH";
                 btnCart_Method_Charge.Title = "CHARGE";
@@ -4012,7 +3813,7 @@ namespace NailsChekin
                     lbCart_Change.Text = "$0.00";
                 }
 
-            }));
+            });
         }
 
         public void HIDE_PAYMENT_NOW()
@@ -4283,18 +4084,18 @@ namespace NailsChekin
 
         private void SaveCartPayment()
         {
-            Invoke(new Action(() =>
+            RunOnUi(() =>
             {
                 double total_amount = Utilitys.getTotalAmount(lbCart_Total.Text);
                 double total_paid = CartHelper.GetPaymentTotal(this.paymentList);
                 double tender = Math.Round((total_amount - total_paid), 2);
 
                 lbCart_Paided.Text = "$" + total_paid;
-                lbCart_AmtDue.Text = "$" + Math.Round((total_amount - total_paid), 2);
+                lbCart_AmtDue.Text = "$" + tender;
                 lbCart_Tender.Text = "$" + tender;
-                kb.Value = ""; //Reset Keyboard
+                if (kb != null) kb.Value = ""; //Reset Keyboard (kb chỉ tạo sau MainForm_Shown)
             }
-            ));
+            );
 
             //Chạy ngầm save trên server nếu chưa complete
             _ = Task.Run(() =>
@@ -4314,7 +4115,7 @@ namespace NailsChekin
 
         public void CartEnableControl()
         {
-            Invoke(new Action(() =>
+            RunOnUi(() =>
                 {
                     btnCart_Method_Cash.Enabled = true;
                     btnCart_Method_Charge.Enabled = true;
@@ -4330,11 +4131,11 @@ namespace NailsChekin
                     btnCart_Discount.Enabled = true;
                     btnCart_Print.Enabled = true;
                 }
-            ));
+            );
         }
         public void CartDisableControl()
         {
-            Invoke(new Action(() =>
+            RunOnUi(() =>
             {
                 btnCart_Method_Cash.Enabled = false;
                 btnCart_Method_Charge.Enabled = false;
@@ -4350,12 +4151,12 @@ namespace NailsChekin
                 btnCart_Discount.Enabled = false;
                 btnCart_Print.Enabled = false;
             }
-            ));
+            );
         }
 
         private void lbCart_CustomerName_Click(object sender, EventArgs e)
         {
-            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, "txtSearchCustomerPhone", "SearchCustomerPhone");
+            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, "", "txtSearchCustomerPhone", "SearchCustomerPhone");
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
@@ -4363,7 +4164,7 @@ namespace NailsChekin
 
         private void lbCart_Search_Click(object sender, EventArgs e)
         {
-            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, "txtSearchCustomerPhone", "SearchCustomerPhone");
+            FormKeyboardOnlyNumber frm = new FormKeyboardOnlyNumber(this, "", "txtSearchCustomerPhone", "SearchCustomerPhone");
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
@@ -4492,7 +4293,8 @@ namespace NailsChekin
         private static Image _backgroundImage;
         private static Image _backgroundImageBorder1200x1600;
         private static Image _backgroundImageBorderSmall;
-        private void PreloadBackground()
+        // An toàn chạy trên background thread: chỉ cache ảnh, không đụng control
+        private void PreloadBackgroundImages()
         {
             if (_backgroundImage == null)
                 _backgroundImage = Properties.Resources.BG_Light;
@@ -4500,7 +4302,11 @@ namespace NailsChekin
                 _backgroundImageBorder1200x1600 = Properties.Resources.border_1200x1600_1px;
             if (_backgroundImageBorderSmall == null)
                 _backgroundImageBorderSmall = Properties.Resources.border_small_control;
+        }
 
+        // Phải chạy trên UI thread: set màu/border cho control
+        private void ApplyPanelTheme()
+        {
             panelBackground.BackColor = ColorHelper.DefaultBackgoundColor;
 
             panelLayout_Left.BackColor = ColorTranslator.FromHtml("#E1F0FB");
@@ -4842,7 +4648,7 @@ namespace NailsChekin
             var content = panelCartItemsTouch.Content;
             var oldControls = content.Controls.OfType<UCCartItem>().ToList();
             content.Controls.Clear();
-            foreach (var old in oldControls) old.MyDispose();
+            foreach (var old in oldControls) { old.MyDispose(); old.Dispose(); }  //MyDispose không release window handle
 
             // Tạo tất cả controls + tính vị trí trước, không add trong vòng lặp
             int itemWidth = panelCartItemsTouch.Width - 5;
@@ -4942,6 +4748,18 @@ namespace NailsChekin
             var reward = Utilitys.CALL_API("Customer/getRewardBalance?customer_id=" + customer_id, "", "GET", true);
 
             this.reward_balance = reward.ToString();
+        }
+
+        public void ResetCustomers(bool send_signal = false)
+        {
+            customer_selected = "";
+            customer_name = "GUEST";
+            lbCart_CustomerName.Text = "CUSTOMER: " + customer_name.ToUpper();
+            svgCart_RemoveCustomer.Visible = false;
+            this.reward_balance = "0";
+
+            if (send_signal)
+                CartHelper.RemoveCustomerInfoSignalR();
         }
 
 
@@ -5046,7 +4864,6 @@ namespace NailsChekin
                 if (control.item_id.Equals(item_id) && control.isPromotion.Equals("0"))
                 {
                     control.increaseQuantity(1);
-                    string qty = int.Parse(control.quantity).ToString();
                     exitst = true;
                 }
             }
@@ -5219,6 +5036,7 @@ namespace NailsChekin
                 }
 
                 target.MyDispose();
+                target.Dispose();  //MyDispose không release window handle
             }
             finally
             {
@@ -5384,16 +5202,12 @@ namespace NailsChekin
 
         private void svgCart_RemoveCustomer_Click(object sender, EventArgs e)
         {
-            customer_selected = "";
-            customer_name = "";
-            lbCart_CustomerName.Text = "CUSTOMER: GUEST";
-            svgCart_RemoveCustomer.Visible = false;
+            this.ResetCustomers(true);
         }
 
         private void lbCart_AmtDue_TextChanged(object sender, EventArgs e)
         {
             double amtDue = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
-            double tender = Utilitys.getTotalAmount(lbCart_Tender.Text);
             UIHelper.SafeUI(lbCart_Tender, () => lbCart_Tender.Text = "$" + Math.Round(amtDue, 2).ToString());
         }
 

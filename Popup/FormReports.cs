@@ -37,12 +37,6 @@ namespace NailsChekin.Popup
             foreach (DXMenuItem item in popupType.Items)
                 item.Click += item_type_Click;
 
-            DXPopupMenu popupSea = new DXPopupMenu();
-            popupType.Items.Add(new DXMenuItem() { Caption = "SALES REPORT" });
-            ddlReportType.DropDownControl = popupType;
-            foreach (DXMenuItem item in popupType.Items)
-                item.Click += item_type_Click;
-
             txtFromDate.Text = DateTime.Now.ToString("MM/01/yyyy");
             txtToDate.Text = DateTime.Now.ToString("MM/dd/yyyy");
 

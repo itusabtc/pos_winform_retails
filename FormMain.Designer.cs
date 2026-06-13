@@ -1269,7 +1269,7 @@
             this.btnCart_Method_SalonCredit.DisabledOverlayText = "Processing...";
             this.btnCart_Method_SalonCredit.Enabled = false;
             this.btnCart_Method_SalonCredit.Font = new System.Drawing.Font("Microsoft Sans Serif", 20F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.btnCart_Method_SalonCredit.Location = new System.Drawing.Point(546, 506);
+            this.btnCart_Method_SalonCredit.Location = new System.Drawing.Point(550, 511);
             this.btnCart_Method_SalonCredit.MinimumSize = new System.Drawing.Size(120, 36);
             this.btnCart_Method_SalonCredit.Name = "btnCart_Method_SalonCredit";
             this.btnCart_Method_SalonCredit.Selected = false;
@@ -1335,7 +1335,7 @@
             this.panelCartAntDue.Location = new System.Drawing.Point(195, 120);
             this.panelCartAntDue.Margin = new System.Windows.Forms.Padding(2);
             this.panelCartAntDue.Name = "panelCartAntDue";
-            this.panelCartAntDue.Size = new System.Drawing.Size(345, 108);
+            this.panelCartAntDue.Size = new System.Drawing.Size(376, 108);
             this.panelCartAntDue.TabIndex = 0;
             // 
             // label39
@@ -1420,7 +1420,7 @@
             this.btnCart_Voucher.DisabledOverlayText = "Processing...";
             this.btnCart_Voucher.Enabled = false;
             this.btnCart_Voucher.Font = new System.Drawing.Font("Microsoft Sans Serif", 20F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.btnCart_Voucher.Location = new System.Drawing.Point(546, 608);
+            this.btnCart_Voucher.Location = new System.Drawing.Point(550, 605);
             this.btnCart_Voucher.MinimumSize = new System.Drawing.Size(120, 36);
             this.btnCart_Voucher.Name = "btnCart_Voucher";
             this.btnCart_Voucher.Selected = false;

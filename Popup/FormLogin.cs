@@ -146,7 +146,7 @@ namespace NailsChekin.Popup
 
                         try
                         {
-                            Process.Start(Application.ExecutablePath, startArgs);
+                            using (Process.Start(Application.ExecutablePath, startArgs)) { }
                         }
                         catch { /* log nếu cần */ }
 

@@ -50,14 +50,14 @@ namespace NailsChekin.Popup
 
         private void svgImageBox1_Click(object sender, EventArgs e)
         {
-            if (!string.IsNullOrEmpty(this.parentForm.curent_order_local_payment_id))
+            if (!string.IsNullOrEmpty(this.parentForm?.curent_order_local_payment_id))
             {
                 //CANCEL P5 From POS
                 if (!Constants.credit_card_device.Equals("CLOVER") && Constants.codepay_connection_type.Contains("WLAN") )
                     CreditCardLib.CODEPAY_WLAN_CANCEL_ORDER(this.parentForm, this.parentForm.curent_order_local_payment_id);
             }
 
-            this.parentForm.EnableDisableControl(true);
+            this.parentForm?.EnableDisableControl(true);
             this.Dispose();
         }
 
@@ -67,9 +67,11 @@ namespace NailsChekin.Popup
             lbMessage.Text = message;
         }
 
-        public void Close()
+        // 'new': cố ý che Form.Close() — đóng từ code POS phải enable lại control trên FormMain.
+        // Lưu ý: đóng bằng Alt+F4 / nút X sẽ đi đường Form.Close() chuẩn, không qua hàm này.
+        public new void Close()
         {
-            this.parentForm.EnableDisableControl(true);
+            this.parentForm?.EnableDisableControl(true);
             this.Dispose();
         }
 

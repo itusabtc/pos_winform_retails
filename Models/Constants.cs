@@ -43,6 +43,10 @@ namespace NailsChekin.Models
 
         public static string socketIOUrl = "http://178.63.64.96:8899";
 
+        //Auto update (Inno Setup): manifest JSON { "version": "x.x.x.x", "setup_url": "http://.../RetailsPOS_Setup.exe", "notes": "" }
+        //Có thể override bằng config local key "update_manifest_url"
+        public static string update_manifest_url = "http://178.63.64.96:8089/pos-update/version.json";
+
         //Login backoffice
         public static string backoffice_url = "https://bo-retails.nailsbeautysupply.com/";
         public static string backoffice_tips_url = "https://tips.nailspaofamerica.com/";

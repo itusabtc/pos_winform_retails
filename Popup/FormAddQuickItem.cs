@@ -370,6 +370,7 @@ namespace NailsChekin.Popup
                 }
 
                 target.MyDispose();
+                target.Dispose();  //MyDispose không release window handle
             }
             finally
             {

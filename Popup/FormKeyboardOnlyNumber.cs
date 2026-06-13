@@ -13,6 +13,7 @@ namespace NailsChekin.Popup
         private Control _parentForm;
         private string  _redirectUrl = "";
         private string  _controlId   = "";
+        public string _defaultValue = "";
 
         private KeyBoardSearch _kb;
         private Label          _lbInput;
@@ -24,13 +25,14 @@ namespace NailsChekin.Popup
             InitializeComponent();
         }
 
-        public FormKeyboardOnlyNumber(Control parent, string control_id, string redirect_url)
+        public FormKeyboardOnlyNumber(Control parent, string default_value, string control_id, string redirect_url)
         {
             InitializeComponent();
 
             _parentForm  = parent;
             _controlId   = control_id;
             _redirectUrl = redirect_url;
+            _defaultValue = default_value;
 
             this.KeyPress += FormKeyboardOnlyNumber_KeyPress;
 
@@ -70,20 +72,22 @@ namespace NailsChekin.Popup
             // KeyBoardSearch fills the keyboard panel
             _kb = new KeyBoardSearch
             {
+                TargetControl      = _lbInput,
                 Dock               = DockStyle.Fill,
                 AllowDecimal       = true,
                 MaxLength          = 30,
                 ButtonFontSize     = 20f,
-                ButtonCornerRadius = 10
+                ButtonCornerRadius = 10,
+                DefaultValue       = _defaultValue
             };
             panelCart_Keyboard.Controls.Add(_kb);
 
-            // Pre-fill chỉ cho Change / Discount — SearchCustomerPhone truyền tên TextBox vào control_id, không phải giá trị
-            if (!string.IsNullOrEmpty(_controlId) &&
-                (_redirectUrl.Contains("Change") || _redirectUrl.Contains("Discount")))
-                _kb.SetValue(_controlId);
+            // overwriteOnNextKey: value pre-fill coi như đang "select" — bấm phím số đầu tiên
+            // sẽ thay thế toàn bộ (vd đang hiện 22, bấm 1 => thành 1 chứ không phải 221)
+            if (!string.IsNullOrEmpty(_defaultValue))
+                _kb.SetValue(_defaultValue, overwriteOnNextKey: true);
 
-            _kb.ValueChanged += (s, e) => _lbInput.Text = _kb.Value;
+            //_kb.ValueChanged += (s, e) => _lbInput.Text = _kb.Value;
             _kb.EnterPressed += (s, e) => EnterNow();
         }
 

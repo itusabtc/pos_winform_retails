@@ -37,6 +37,36 @@ namespace NailsChekin.Popup
             this.UpdateStyles();
 
             this.parentForm = parent;
+
+            AddCheckVersionButton();
+        }
+
+        private MyControls.ButtonRound btnCheckVersion;
+        private void AddCheckVersionButton()
+        {
+            btnCheckVersion = new MyControls.ButtonRound
+            {
+                Title          = "CHECK VERSION (v" + UpdateHelper.GetLocalVersionString() + ")",
+                TitleFontSize  = 16f,
+                TitleBackColor = Color.FromArgb(21, 101, 192),
+                BorderColor    = Color.FromArgb(21, 101, 192),
+                BackColor      = Color.Transparent,
+                Size           = new Size(330, 50),
+                MinimumSize    = new Size(120, 36),
+                Cursor         = Cursors.Hand,
+            };
+            btnCheckVersion.Click += BtnCheckVersion_Click;
+
+            // cùng parent với btnLogout để Adjust_Screen canh vị trí cùng hàng
+            (btnLogout.Parent ?? (Control)this).Controls.Add(btnCheckVersion);
+            btnCheckVersion.BringToFront();
+        }
+
+        private async void BtnCheckVersion_Click(object sender, EventArgs e)
+        {
+            btnCheckVersion.Enabled = false;
+            try { await UpdateHelper.ManualCheckAsync(this); }
+            finally { if (!this.IsDisposed) btnCheckVersion.Enabled = true; }
         }
 
         private async void FormSetting_Load(object sender, EventArgs e)
@@ -211,6 +241,8 @@ namespace NailsChekin.Popup
             {
                 btnClose.Location = new Point(this.Width - btnClose.Width - 10, btnClose.Location.Y);
                 btnLogout.Location = new Point(this.Width - btnClose.Width - btnLogout.Width - 30, btnLogout.Location.Y);
+                if (btnCheckVersion != null)
+                    btnCheckVersion.Location = new Point(btnLogout.Left - btnCheckVersion.Width - 20, btnLogout.Location.Y);
 
                 panelContent.Height = this.Height - lbTitle.Bottom - 20;
                 panelContent.Width  = this.Width - 20;
@@ -407,9 +439,12 @@ namespace NailsChekin.Popup
                     {
                         Uri updateLocation = ApplicationDeployment.CurrentDeployment.UpdateLocation;
 
-                        System.Net.WebClient webClient = new System.Net.WebClient();
-                        webClient.Encoding = Encoding.UTF8;
-                        string manifestFile = webClient.DownloadString(updateLocation);
+                        string manifestFile;
+                        using (var webClient = new System.Net.WebClient())
+                        {
+                            webClient.Encoding = Encoding.UTF8;
+                            manifestFile = webClient.DownloadString(updateLocation);
+                        }
 
                         //MessageBox.Show("manifestFile: " + manifestFile);
 
@@ -577,9 +612,12 @@ namespace NailsChekin.Popup
             //Used to use the Clickonce API but we've uncovered a pretty serious bug which results in a COMException and the loss of ability
             //to check for updates. So until this is fixed, we're resorting to a very lo-fi way of checking for an update.
 
-            System.Net.WebClient webClient = new System.Net.WebClient();
-            webClient.Encoding = Encoding.UTF8;
-            string manifestFile = webClient.DownloadString(updateLocation);
+            string manifestFile;
+            using (var webClient = new System.Net.WebClient())
+            {
+                webClient.Encoding = Encoding.UTF8;
+                manifestFile = webClient.DownloadString(updateLocation);
+            }
 
             //We have some garbage info from the file header, presumably because the file is a .application and not .xml
             //Just start from the start of the first tag
@@ -624,9 +662,24 @@ namespace NailsChekin.Popup
         }
 
         AlertForm pairingForm;
+
+        // Pairing callback từ Clover SDK bắn về trên thread khác — form có thể đã đóng,
+        // Invoke trần sẽ ném InvalidOperationException
+        private void RunOnUi(Action action)
+        {
+            try
+            {
+                if (this.IsDisposed || !this.IsHandleCreated) return;
+                if (this.InvokeRequired) this.BeginInvoke(action);
+                else action();
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+        }
+
         public void OnPairingCode(string pairingCode)
         {
-            Invoke(new Action(() =>
+            RunOnUi(() =>
             {
                 pairingForm?.Dispose();
                 pairingForm = new AlertForm(this);
@@ -635,8 +688,7 @@ namespace NailsChekin.Popup
                 pairingForm.Show();
 
                 LogHelper.SaveLOG_Payment("OnPairingCode", "Enter this code on the Clover Mini: " + pairingCode);
-            }
-            ));
+            });
         }
 
         public void OnPairingSuccess(string pairingAuthToken)
@@ -644,7 +696,7 @@ namespace NailsChekin.Popup
             NailsChekin.Properties.Settings.Default.pairingAuthToken = pairingAuthToken;
             NailsChekin.Properties.Settings.Default.selectedConfig = "WS";
             NailsChekin.Properties.Settings.Default.Save();
-            Invoke(new Action(() => pairingForm?.Dispose()));
+            RunOnUi(() => pairingForm?.Dispose());
 
             LogHelper.SaveLOG_Payment("OnPairingSuccess", pairingAuthToken);
         }
@@ -654,15 +706,14 @@ namespace NailsChekin.Popup
             LogHelper.SaveLOG_Payment("OnPairingState", state + " MSG: " + message);
             if (state == "AUTHENTICATING")
             {
-                Invoke(new Action(() =>
+                RunOnUi(() =>
                 {
                     pairingForm?.Dispose();
                     pairingForm = new AlertForm(this);
                     pairingForm.Title = "Pairing Security Pin";
                     pairingForm.Label = message;
                     pairingForm.Show();
-                }
-                ));
+                });
             }
         }
 
@@ -678,6 +729,9 @@ namespace NailsChekin.Popup
 
         private void FormSetting_FormClosed(object sender, FormClosedEventArgs e)
         {
+            // Đóng popup pairing nếu còn mở (non-modal, không tự dispose theo form)
+            try { pairingForm?.Dispose(); pairingForm = null; } catch { }
+
             //Xử lý không bị cảm giác giật do xài Dispose() ngay nếu đóng thẳng
             _ = Task.Run(async () =>
             {

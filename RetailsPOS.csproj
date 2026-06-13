@@ -367,6 +367,7 @@
     <Compile Include="Models\Helper\PrinterLocalHelper.cs" />
     <Compile Include="Models\Helper\RawPrinterHelper.cs" />
     <Compile Include="Models\Helper\RoundedButtonsUI.cs" />
+    <Compile Include="Models\Helper\UpdateHelper.cs" />
     <Compile Include="Models\Helper\SignatureDownloader.cs" />
     <Compile Include="Models\Helper\SizeHelper.cs" />
     <Compile Include="Models\Helper\SmoothUI.cs" />
