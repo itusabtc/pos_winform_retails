@@ -50,12 +50,52 @@ namespace NailsChekin.Popup
 
         private void svgImageBox1_Click(object sender, EventArgs e)
         {
-            if (!string.IsNullOrEmpty(this.parentForm?.curent_order_local_payment_id))
+            try
             {
-                //CANCEL P5 From POS
-                if (!Constants.credit_card_device.Equals("CLOVER") && Constants.codepay_connection_type.Contains("WLAN") )
-                    CreditCardLib.CODEPAY_WLAN_CANCEL_ORDER(this.parentForm, this.parentForm.curent_order_local_payment_id);
+                FormMain main = this.parentForm;
+
+                // merchant_order_no đang dùng để thu tiền nằm ở curent_order_payment_id
+                // (KHÔNG phải curent_order_local_payment_id - field đó chỉ được set khi load lại
+                //  sale item, nên lúc đang payment nó rỗng/giá trị cũ => trước đây X không hủy được).
+                string merchant_order_no = main?.curent_order_payment_id;
+
+                // Chỉ gửi lệnh hủy cho máy CodePay P5 (bỏ qua Clover).
+                // T2 dùng cơ chế hủy riêng (qua socket / _pendingT2MerchantOrderNo) nên không xử lý ở đây.
+                bool isCodePayP5 =
+                    main != null
+                    && !Constants.credit_card_device.Equals("CLOVER")
+                    && CreditCardLib.GET_CODEPAY_DEVICE() != CODEPAY_DEVICE.T2
+                    && !string.IsNullOrEmpty(merchant_order_no);
+
+                if (isCodePayP5)
+                {
+                    //CANCEL P5 From POS - route theo đúng connection type đang cấu hình
+                    P5_CONNECTTION_TYPE connType = P5Lib.Get_P5_ConecttionType_Setting();
+
+                    // Gửi hủy ở background để X không bị treo nếu máy không phản hồi; form vẫn đóng ngay.
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            switch (connType)
+                            {
+                                case P5_CONNECTTION_TYPE.CLOUD:
+                                    CreditCardLib.CODEPAY_CANCEL_ORDER(merchant_order_no);
+                                    break;
+                                case P5_CONNECTTION_TYPE.WLAN_LAN:
+                                case P5_CONNECTTION_TYPE.PAIR_MODE:
+                                    CreditCardLib.CODEPAY_WLAN_CANCEL_ORDER(main, merchant_order_no);
+                                    break;
+                                case P5_CONNECTTION_TYPE.USB:
+                                    CreditCardLib.CODEPAY_USB_CANCEL_ORDER(main, merchant_order_no);
+                                    break;
+                            }
+                        }
+                        catch { /* hủy là best-effort, không chặn việc đóng form */ }
+                    });
+                }
             }
+            catch { }
 
             this.parentForm?.EnableDisableControl(true);
             this.Dispose();

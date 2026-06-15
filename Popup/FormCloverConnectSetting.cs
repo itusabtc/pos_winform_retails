@@ -141,7 +141,7 @@ namespace NailsChekin.Popup
 
                     selectedConfig = new WebSocketCloverDeviceConfiguration(
                         endpoint, APPLICATION_ID, false, 10,
-                        "Nails Solutions POS", "POS-3",
+                        "Nails Solutions POS", "POS-RETAIL",
                         Properties.Settings.Default.pairingAuthToken,
                         pairingCodeHandler, pairingSuccessHandler, pairingStateHandler);
                 }

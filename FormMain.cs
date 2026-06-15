@@ -1076,17 +1076,28 @@ namespace NailsChekin
         public double surcharge_debit_amount = 0;
         public double dual_price_amount = 0;
 
+        private bool _creditChargeInProgress = false;
+
         public void SHOW_PAYMENT_CREDIT(string pincode, double total_charge, double total_pos_tip)
         {
+            // Chặn bấm Charge nhiều lần: nếu đang xử lý 1 phiên credit thì bỏ qua click mới.
+            if (_creditChargeInProgress)
+                return;
+            _creditChargeInProgress = true;
+
+            // Disable NGAY các nút thanh toán để không bấm lại trong lúc đang kết nối/charge (kể cả lúc reconnect Clover ~8s).
+            CartDisableControl();
+
             ResetHandledPayments();
 
             // fire-and-forget, không block các hàm cha đã gọi SHOW_PAYMENT_CREDIT
             _ = SHOW_PAYMENT_CREDIT_InternalAsync(pincode, total_charge, total_pos_tip);
-            
+
         }
 
         private async Task SHOW_PAYMENT_CREDIT_InternalAsync(string pincode, double total_charge, double total_pos_tip)
         {
+            bool started = false; // true nếu đã thực sự gửi payment đi -> giữ disable; lỗi/return sớm -> bật lại control
             try
             {
                 if (this.paymentList == null)  //ResetAllData / POS_CHECKOUT có thể đã set null
@@ -1143,9 +1154,9 @@ namespace NailsChekin
                         if (!string.IsNullOrEmpty(payResult) && !payResult.Equals("OK"))
                         {
                             CustomMessageBox.Show(payResult);
-                            CartEnableControl();  //Bat lai control
-                            return;
+                            return;   // started=false -> finally sẽ bật lại control
                         }
+                        started = true; // CodePay đã gửi đi -> giữ disable
                     }
                     else
                     {
@@ -1155,8 +1166,11 @@ namespace NailsChekin
                             return;
                         }
 
-                        // NHÁNH CLOVER: vẫn sync như cũ
-                        if (!cloverStatus)
+                        // NHÁNH CLOVER:
+                        // Cờ cloverStatus / _deviceReady có thể bị kẹt false (lỗi transient) hoặc kết nối đã rớt thật.
+                        // EnsureCloverReadyAsync sẽ: ping nhẹ -> nếu chưa được thì reconnect đầy đủ rồi chờ DeviceReady
+                        // (tương đương FormCloverReConnect bên NailsSolutionsPOS) trước khi báo lỗi.
+                        if (!await EnsureCloverReadyAsync(8000))
                         {
                             CustomMessageBox.Show("Can't connect to clover device, please contact admin !");
                             return;
@@ -1164,6 +1178,7 @@ namespace NailsChekin
 
                         CartDisableControl(); // Validate xong moi Enable/Disable Cart Button
                         this.Clover_Payment_Simple(total_charge, total_charge, total_pos_tip);
+                        started = true; // Clover đã gửi đi -> giữ disable
                     }
                 }
                 else // Add to payment CC => không dùng máy cà thẻ
@@ -1181,6 +1196,7 @@ namespace NailsChekin
 
                     CartDisableControl(); // Validate xong moi Enable/Disable Cart Button
                     this.CHECK_PAYMENT_CORRECT();
+                    started = true; // đã đẩy vào payment list / checkout -> giữ disable
                 }
             }
             catch (Exception ex)
@@ -1188,6 +1204,16 @@ namespace NailsChekin
                 // tránh exception “rơi tự do” vì đây là fire-and-forget
                 LogHelper.SaveLOG_CodePay(ex.Message, "SHOW_PAYMENT_CREDIT_InternalAsync Exception");
                 CustomMessageBox.Show("Unexpected error during credit payment.\n" + ex.Message);
+            }
+            finally
+            {
+                // Cho phép bấm Charge lại cho lần sau.
+                _creditChargeInProgress = false;
+
+                // Nếu KHÔNG thực sự gửi payment (lỗi/return sớm) -> bật lại control để user thử lại.
+                // Nếu đã gửi (started) -> giữ disable, các handler completion/fail sẽ tự bật lại.
+                if (!started)
+                    CartEnableControl();
             }
         }
 
@@ -1243,6 +1269,42 @@ namespace NailsChekin
             LogHelper.SaveLOG_Payment("CALL POS_CHECKOUT - check_partical: " + check_partical.ToString(), "CHECK_PAYMENT_CORRECT");
             this.POS_CHECKOUT("1", this.paymentList, total_payment);
             LogHelper.SaveLOG_Payment(this.payment_result, "Process Ticket Result");
+        }
+
+        /// <summary>
+        /// Đảm bảo máy Clover sẵn sàng nhận lệnh trước khi charge.
+        /// B1: nếu đang ready -> ok ngay.
+        /// B2: ping nhẹ (cờ có thể stale nhưng kết nối còn sống) rồi chờ ngắn.
+        /// B3: kết nối có thể đã rớt thật -> reconnect đầy đủ (giống FormCloverReConnect bên NailsSolutionsPOS)
+        ///     rồi chờ DeviceReady tới timeoutMs.
+        /// </summary>
+        private async Task<bool> EnsureCloverReadyAsync(int timeoutMs)
+        {
+            if (_clover == null) return false;
+            if (_clover.IsReady) return true;
+
+            // Nudge: ping trạng thái máy.
+            //  - Nếu máy còn sống mà cờ bị stale -> OnRetrieveDeviceStatusResponse -> DeviceAlive -> phục hồi cờ.
+            //  - Nếu đang rớt -> lỗi này sẽ kích manager tự ScheduleReconnect.
+            // KHÔNG tự InitClover/Disconnect ở đây: teardown manager song song với vòng reconnect đang chạy
+            // sẽ thao tác trên object đã dispose -> NullReference COMMUNICATION_ERROR lặp vô hạn (đã thấy trong log).
+            try { _clover.PingDeviceStatus(); } catch { }
+
+            // Chờ manager tự kết nối lại (ScheduleReconnect/keepalive) tới khi máy thật sự ready.
+            return await WaitCloverReadyAsync(timeoutMs);
+        }
+
+        private async Task<bool> WaitCloverReadyAsync(int timeoutMs)
+        {
+            int waited = 0;
+            const int step = 150;
+            while (waited < timeoutMs)
+            {
+                if (_clover != null && _clover.IsReady) return true;
+                await Task.Delay(step);
+                waited += step;
+            }
+            return _clover != null && _clover.IsReady;
         }
 
         private void ConfirmPaymentCodePayNow(bool check_partical = false)

@@ -5,7 +5,6 @@ using com.clover.remotepay.sdk;
 using com.clover.remotepay.transport;
 using com.clover.sdk.v3.payments;
 using NailsChekin.Models.Helper;
-using NailsChekin.Models.Helper;
 
 namespace NailsChekin.Models.Services
 {
@@ -60,9 +59,39 @@ namespace NailsChekin.Models.Services
         private const int KEEPALIVE_MS = 45_000;              // 45s
         private const int RECONNECT_FIRST_DELAY_MS = 1_500;   // 1.5s
         private const int RECONNECT_MAX_DELAY_MS = 30_000;    // 30s
+        private const int RECONNECT_READY_GRACE_MS = 4_000;   // sau mỗi lần connect, chờ tối đa 4s cho OnDeviceReady trước khi coi là fail
 
-        // Giao dịch đang chờ để retry sau khi reconnect
-        private (long amountCents, string externalId, bool cardNotPresent, int retries)? _pendingSale;
+        // Khi teardown (Disconnect/Cleanup) -> dừng hẳn vòng reconnect, tránh spin trên instance đã dispose.
+        private volatile bool _shuttingDown = false;
+
+        // Giao dịch đang chờ để retry sau khi reconnect.
+        // Lưu ĐỦ tham số để khi retry không bị mất orderId/tax/tip (tránh sai ticket/sai tiền).
+        private sealed class PendingSale
+        {
+            public bool IsFull;        // true = overload đầy đủ (orderId/tax/tip…)
+
+            // overload đơn giản
+            public long AmountCents;
+            public string ExternalId;
+            public bool CardNotPresent;
+
+            // overload đầy đủ
+            public string OrderId;
+            public long TaxAmount;
+            public long TipAmount;
+            public long Amount;
+            public bool RepairMode;
+            public bool TipsOn;
+
+            public int Retries;
+        }
+        private PendingSale _pendingSale;
+
+        // Flag device đang reset (tránh gửi Sale trong lúc reset chưa xong)
+        private volatile bool _isResetting = false;
+        private System.Threading.Timer _resetTimeoutTimer;
+        private const int RESET_TIMEOUT_MS = 8_000;   // SDK không phản hồi reset trong 8s thì tự nhả cờ
+        private const int RESET_WAIT_MS = 10_000;     // Sale chờ reset tối đa 10s
 
         public CloverManager(
             Control owner,
@@ -128,12 +157,17 @@ namespace NailsChekin.Models.Services
             }
         }
 
-        private void EnsureCore()
+        // Tạo Service/Process/Listener/Cart + nối toàn bộ event. Dùng chung cho EnsureCore & Connect.
+        private void BuildCore()
         {
-            if (Service != null) return;
+            _shuttingDown = false; // build mới -> cho phép reconnect lại
 
             Service = new CloverConnectorService(_ui);
-            Process = new CloverPaymentProcessUI(_owner, io => (s, a) => Service.InvokeInputOption(io));
+
+            // Process UI trước để listener có chỗ cập nhật.
+            // Tham số cancelDevice: nút X trên FormCloverProcessing khi chưa có nút Cancel động -> ResetDevice.
+            Process = new CloverPaymentProcessUI(_owner, io => (s, a) => Service.InvokeInputOption(io), () => ResetDevice("Cancel from X close"));
+
             Listener = new CloverListenerHelper(
                 updateStatus: _status,
                 enableDisableClover: _enableDisableClover,
@@ -145,8 +179,22 @@ namespace NailsChekin.Models.Services
                 showSignatureForm: req => _showSignatureForm(req),
                 reconnect: null // () => Service.Reconnect()
             );
+
             Cart = new CartHelper(Service, _status, _setWaitingFlag, _setConfirmPrint, _getToken, _log);
 
+            WireListenerAndCart();
+        }
+
+        private void EnsureCore()
+        {
+            if (Service != null) return;
+            BuildCore();
+        }
+
+        // Nối toàn bộ event (đặt 1 chỗ để không bị lệch giữa các nhánh tạo kết nối).
+        // Dùng named handler để Cleanup có thể gỡ đúng bằng UnwireListenerAndCart().
+        private void WireListenerAndCart()
+        {
             // bridge: Listener -> Cart
             Listener.SaleResponse += Cart.HandleSaleResponse;
             Listener.VoidPaymentResponse += Cart.HandleVoidPaymentResponse;
@@ -155,62 +203,147 @@ namespace NailsChekin.Models.Services
 
             // bridge: Cart -> Manager
             Cart.SaleSucceeded += HandleSaleSucceeded;
-            Cart.SaleFailed += reason => SaleFailed?.Invoke(reason);
+            Cart.SaleFailed += OnCartSaleFailed;
             Cart.VoidSucceeded += HandleVoidSucceeded;
-            Cart.VoidFailed += reason => VoidFailed?.Invoke(reason);
+            Cart.VoidFailed += OnCartVoidFailed;
             Cart.RefundSucceeded += HandleRefundSucceeded;
-            Cart.RefundFailed += reason => RefundFailed?.Invoke(reason);
-            Cart.TipUpdated += cents => TipUpdated?.Invoke(cents);
-            Cart.PaymentFinished += ok => { PaymentFinished?.Invoke(ok); try { Process.StopPayment(); } catch { } };
+            Cart.RefundFailed += OnCartRefundFailed;
+            Cart.TipUpdated += OnCartTipUpdated;
+            Cart.PaymentFinished += OnCartPaymentFinished;
 
             // bubble pairing ra Manager
-            Service.PairingCodeReceived += c => PairingCodeReceived?.Invoke(c);
-            Service.PairingSuccess += t => PairingSuccess?.Invoke(t);
-            Service.PairingStateChanged += (s, m) => PairingStateChanged?.Invoke(s, m);
+            Service.PairingCodeReceived += OnServicePairingCode;
+            Service.PairingSuccess += OnServicePairingSuccess;
+            Service.PairingStateChanged += OnServicePairingState;
 
-            // ---- Gắn thêm event theo dõi kết nối để auto-reconnect/keepalive ----
-            Listener.DeviceReady += () =>
+            // theo dõi kết nối để auto-reconnect/keepalive + xử lý state kẹt
+            Listener.DeviceReady += OnListenerDeviceReady;
+            Listener.DeviceDisconnected += OnListenerDeviceDisconnected;
+            Listener.DeviceError += OnListenerDeviceError;
+            Listener.InvalidStateTransition += OnListenerInvalidStateTransition;
+            Listener.ResetDeviceCompleted += OnListenerResetDeviceCompleted;
+        }
+
+        private void UnwireListenerAndCart()
+        {
+            if (Listener != null && Cart != null)
             {
-                _isConnected = true;
-                _deviceReady = true;
-                _reconnectAttempt = 0;
-                UI(() => { _setCloverStatus?.Invoke(true); _status?.Invoke("Clover ready."); });
-                StartKeepAlive();
+                Listener.SaleResponse -= Cart.HandleSaleResponse;
+                Listener.VoidPaymentResponse -= Cart.HandleVoidPaymentResponse;
+                Listener.RefundPaymentResponse -= Cart.HandleRefundPaymentResponse;
+                Listener.TipAdded -= Cart.HandleTipAdded;
+            }
 
-                // Retry sale nếu đang treo
-                var p = _pendingSale;
-                _pendingSale = null;
-                if (p.HasValue)
+            if (Cart != null)
+            {
+                Cart.SaleSucceeded -= HandleSaleSucceeded;
+                Cart.SaleFailed -= OnCartSaleFailed;
+                Cart.VoidSucceeded -= HandleVoidSucceeded;
+                Cart.VoidFailed -= OnCartVoidFailed;
+                Cart.RefundSucceeded -= HandleRefundSucceeded;
+                Cart.RefundFailed -= OnCartRefundFailed;
+                Cart.TipUpdated -= OnCartTipUpdated;
+                Cart.PaymentFinished -= OnCartPaymentFinished;
+            }
+
+            if (Service != null)
+            {
+                Service.PairingCodeReceived -= OnServicePairingCode;
+                Service.PairingSuccess -= OnServicePairingSuccess;
+                Service.PairingStateChanged -= OnServicePairingState;
+            }
+
+            if (Listener != null)
+            {
+                Listener.DeviceReady -= OnListenerDeviceReady;
+                Listener.DeviceDisconnected -= OnListenerDeviceDisconnected;
+                Listener.DeviceError -= OnListenerDeviceError;
+                Listener.InvalidStateTransition -= OnListenerInvalidStateTransition;
+                Listener.ResetDeviceCompleted -= OnListenerResetDeviceCompleted;
+            }
+        }
+
+        // ---------- named bridge handlers (Cart/Service -> Manager) ----------
+        private void OnCartSaleFailed(string reason) => SaleFailed?.Invoke(reason);
+        private void OnCartVoidFailed(string reason) => VoidFailed?.Invoke(reason);
+        private void OnCartRefundFailed(string reason) => RefundFailed?.Invoke(reason);
+        private void OnCartTipUpdated(long cents) => TipUpdated?.Invoke(cents);
+        private void OnCartPaymentFinished(bool ok)
+        {
+            PaymentFinished?.Invoke(ok);
+            try { Process?.StopPayment(); } catch { }
+        }
+        private void OnServicePairingCode(string c) => PairingCodeReceived?.Invoke(c);
+        private void OnServicePairingSuccess(string t) => PairingSuccess?.Invoke(t);
+        private void OnServicePairingState(string s, string m) => PairingStateChanged?.Invoke(s, m);
+
+        // ---------- named connection handlers (Listener -> Manager) ----------
+        private void OnListenerDeviceReady()
+        {
+            _isConnected = true;
+            _deviceReady = true;
+            _reconnectAttempt = 0;
+            UI(() => { _setCloverStatus?.Invoke(true); _status?.Invoke("Clover ready."); });
+            StartKeepAlive();
+
+            // Retry sale nếu đang treo — dùng đúng overload đã lưu để không mất orderId/tax/tip
+            var p = _pendingSale;
+            _pendingSale = null;
+            if (p != null)
+            {
+                _status?.Invoke("Retrying pending sale…");
+                try
                 {
-                    _status?.Invoke("Retrying pending sale…");
-                    try { Service?.StartSale(p.Value.amountCents, p.Value.externalId, p.Value.cardNotPresent); }
-                    catch
+                    if (p.IsFull)
+                        Service?.StartSale(p.OrderId, p.TaxAmount, p.TipAmount, p.Amount, p.RepairMode, p.TipsOn);
+                    else
+                        Service?.StartSale(p.AmountCents, p.ExternalId, p.CardNotPresent);
+                }
+                catch
+                {
+                    if (p.Retries > 0)
                     {
-                        if (p.Value.retries > 0)
-                        {
-                            // xếp lại để thử thêm 1 lần nữa
-                            _pendingSale = (p.Value.amountCents, p.Value.externalId, p.Value.cardNotPresent, p.Value.retries - 1);
-                            ScheduleReconnect(immediate: true);
-                        }
+                        // xếp lại để thử thêm 1 lần nữa
+                        p.Retries--;
+                        _pendingSale = p;
+                        ScheduleReconnect(immediate: true);
                     }
                 }
-            };
+            }
+        }
 
-            Listener.DeviceDisconnected += () =>
-            {
-                _isConnected = false;
-                _deviceReady = false;
-                UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke("Clover USB disconnected."); });
-                ScheduleReconnect();
-            };
+        private void OnListenerDeviceDisconnected()
+        {
+            _isConnected = false;
+            _deviceReady = false;
+            UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke("Clover disconnected."); });
+            ScheduleReconnect();
+        }
 
-            Listener.DeviceError += (code, msg) =>
-            {
-                _isConnected = false;
-                _deviceReady = false;
-                UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke($"Clover error {code}: {msg}"); });
-                ScheduleReconnect();
-            };
+        private void OnListenerDeviceError(string code, string msg)
+        {
+            _isConnected = false;
+            _deviceReady = false;
+            UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke($"Clover error {code}: {msg}"); });
+            ScheduleReconnect();
+        }
+
+        private void OnListenerInvalidStateTransition(string requested, string current)
+        {
+            // Device kẹt giữa phiên (vd ADD_TIP_BEFORE_PAYMENT) → reset để về idle
+            _status?.Invoke($"InvalidStateTransition: {requested} <- {current}. Đang reset device…");
+            BeginResetDevice();
+
+            // Giải phóng UI để popup/cờ không bị treo nếu SDK chỉ phát notification này mà không có SaleResponse
+            UI(() => _setWaitingFlag?.Invoke(false));
+            try { Process?.StopPayment(); } catch { }
+        }
+
+        private void OnListenerResetDeviceCompleted(bool success)
+        {
+            _isResetting = false;
+            _resetTimeoutTimer?.Dispose(); _resetTimeoutTimer = null;
+            _status?.Invoke(success ? "Device reset xong, sẵn sàng thanh toán." : "Reset device thất bại.");
         }
 
         // Khi user bấm Pair (ép hiện mã pairing)
@@ -219,7 +352,7 @@ namespace NailsChekin.Models.Services
             EnsureCore();
 
             var cfg = new WebSocketCloverDeviceConfiguration(
-                endpoint, "com.clover.CloverExamplePOS:3.0.2", false, 5, "Nails Solutions POS", "POS-3", "",
+                endpoint, "com.clover.CloverExamplePOS:3.0.2", false, 5, "Nails Solutions POS", "POS-RETAIL", "",
                 Service.HandlePairingCode, Service.HandlePairingSuccess, Service.HandlePairingState
             );
 
@@ -233,90 +366,7 @@ namespace NailsChekin.Models.Services
 
             Cleanup(); // bảo đảm sạch trước khi connect
 
-            Service = new CloverConnectorService(_ui);
-
-            // Process UI trước để listener có chỗ cập nhật
-            Process = new CloverPaymentProcessUI(_owner, io => (s, a) => Service.InvokeInputOption(io));
-
-            Listener = new CloverListenerHelper(
-                updateStatus: _status,
-                enableDisableClover: _enableDisableClover,
-                setCloverStatus: _setCloverStatus,
-                getCurrentToken: _getToken,
-                deviceActivityStartUI: ev => Process.HandleDeviceActivityStart(ev),
-                invokeInputOption: io => Service.InvokeInputOption(io),
-                displayReceiptOptions: req => Service.DisplayReceiptOptions(req),
-                showSignatureForm: req => _showSignatureForm(req),
-                reconnect: null // () => Service.Reconnect()
-            );
-
-            Cart = new CartHelper(Service, _status, _setWaitingFlag, _setConfirmPrint, _getToken, _log);
-
-            // bridge: Listener -> Cart
-            Listener.SaleResponse += Cart.HandleSaleResponse;
-            Listener.VoidPaymentResponse += Cart.HandleVoidPaymentResponse;
-            Listener.RefundPaymentResponse += Cart.HandleRefundPaymentResponse;
-            Listener.TipAdded += Cart.HandleTipAdded;
-
-            // bridge: Cart -> Manager
-            Cart.SaleSucceeded += HandleSaleSucceeded;
-            Cart.SaleFailed += reason => SaleFailed?.Invoke(reason);
-            Cart.VoidSucceeded += HandleVoidSucceeded;
-            Cart.VoidFailed += reason => VoidFailed?.Invoke(reason);
-            Cart.RefundSucceeded += HandleRefundSucceeded;
-            Cart.RefundFailed += reason => RefundFailed?.Invoke(reason);
-            Cart.TipUpdated += cents => TipUpdated?.Invoke(cents);
-            Cart.PaymentFinished += ok => { PaymentFinished?.Invoke(ok); try { Process.StopPayment(); } catch { } };
-
-            // bubble pairing
-            Service.PairingCodeReceived += c => PairingCodeReceived?.Invoke(c);
-            Service.PairingSuccess += t => PairingSuccess?.Invoke(t);
-            Service.PairingStateChanged += (s, m) => PairingStateChanged?.Invoke(s, m);
-
-            // theo dõi kết nối
-            // ---- Gắn thêm event theo dõi kết nối để auto-reconnect/keepalive ----
-            Listener.DeviceReady += () =>
-            {
-                _isConnected = true;
-                _deviceReady = true;
-                _reconnectAttempt = 0;
-                UI(() => { _setCloverStatus?.Invoke(true); _status?.Invoke("Clover ready."); });
-                StartKeepAlive();
-
-                // Retry sale nếu đang treo
-                var p = _pendingSale;
-                _pendingSale = null;
-                if (p.HasValue)
-                {
-                    _status?.Invoke("Retrying pending sale…");
-                    try { Service?.StartSale(p.Value.amountCents, p.Value.externalId, p.Value.cardNotPresent); }
-                    catch
-                    {
-                        if (p.Value.retries > 0)
-                        {
-                            // xếp lại để thử thêm 1 lần nữa
-                            _pendingSale = (p.Value.amountCents, p.Value.externalId, p.Value.cardNotPresent, p.Value.retries - 1);
-                            ScheduleReconnect(immediate: true);
-                        }
-                    }
-                }
-            };
-
-            Listener.DeviceDisconnected += () =>
-            {
-                _isConnected = false;
-                _deviceReady = false;
-                UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke("Clover disconnected."); });
-                ScheduleReconnect();
-            };
-
-            Listener.DeviceError += (code, msg) =>
-            {
-                _isConnected = false;
-                _deviceReady = false;
-                UI(() => { _setCloverStatus?.Invoke(false); _status?.Invoke($"Clover error {code}: {msg}"); });
-                ScheduleReconnect();
-            };
+            BuildCore();
 
             // thực sự connect (LAN/WebSocket)
             Service.ConnectWebSocket(endpoint, pairingToken, Listener);
@@ -324,7 +374,8 @@ namespace NailsChekin.Models.Services
                 throw new InvalidOperationException("Clover connector is NULL after Connect.");
 
             _isConnected = true;
-            _reconnectAttempt = 0;
+            // KHÔNG reset _reconnectAttempt ở đây: transport up != device ready. Chỉ reset trong OnListenerDeviceReady,
+            // nếu không backoff sẽ luôn bị kéo về 1.5s -> hammer khi máy báo lỗi ngay sau connect.
             StartKeepAlive();
         }
 
@@ -347,13 +398,43 @@ namespace NailsChekin.Models.Services
         public void ResetDevice(string reason = "")
         {
             _status?.Invoke("Force reset Clover " + reason);
-            try { Service?.Connector?.ResetDevice(); } catch { }
+            BeginResetDevice();
+        }
+
+        /// <summary>Máy đã sẵn sàng nhận lệnh (đã OnDeviceReady và connector còn sống).</summary>
+        public bool IsReady => _deviceReady && Service?.Connector != null;
+
+        /// <summary>
+        /// Gửi 1 lệnh hỏi trạng thái thiết bị (heartbeat tức thì). Nếu máy còn sống thì OnRetrieveDeviceStatusResponse
+        /// bắn về; nếu đang rớt thì lỗi sẽ kích ScheduleReconnect. Dùng để "đánh thức"/kiểm tra trước khi báo lỗi.
+        /// </summary>
+        public void PingDeviceStatus()
+        {
+            try { Service?.Connector?.RetrieveDeviceStatus(new RetrieveDeviceStatusRequest()); } catch { }
+        }
+
+        // Gửi lệnh ResetDevice và bật flag _isResetting.
+        // Nếu RESET_TIMEOUT_MS không nhận được ResetDeviceResponse thì tự tắt flag (tránh bị treo mãi).
+        private void BeginResetDevice()
+        {
+            _isResetting = true;
+            try { Service?.Connector?.ResetDevice(); } catch { _isResetting = false; return; }
+
+            _resetTimeoutTimer?.Dispose();
+            _resetTimeoutTimer = new System.Threading.Timer(_ =>
+            {
+                _isResetting = false;
+                _status?.Invoke("Reset device timeout — tiếp tục bình thường.");
+            }, null, RESET_TIMEOUT_MS, Timeout.Infinite);
         }
 
         public void Disconnect()
         {
+            _shuttingDown = true;
             _isConnected = false;
+            _deviceReady = false;
             StopKeepAlive();
+            _reconnectTimer?.Dispose(); _reconnectTimer = null;
             try { Service?.Connector?.RemoveCloverConnectorListener(Listener); } catch { }
             try { Service?.Disconnect(); } catch { }
         }
@@ -363,42 +444,21 @@ namespace NailsChekin.Models.Services
         {
             try
             {
+                _shuttingDown = true;
                 _isConnected = false;
+                _deviceReady = false;
                 StopKeepAlive();
                 _reconnectTimer?.Dispose(); _reconnectTimer = null;
 
-                if (Listener != null && Cart != null)
-                {
-                    Listener.SaleResponse -= Cart.HandleSaleResponse;
-                    Listener.VoidPaymentResponse -= Cart.HandleVoidPaymentResponse;
-                    Listener.RefundPaymentResponse -= Cart.HandleRefundPaymentResponse;
-                    Listener.TipAdded -= Cart.HandleTipAdded;
+                // dọn trạng thái reset để không kẹt cờ ở instance kế tiếp
+                _isResetting = false;
+                _resetTimeoutTimer?.Dispose(); _resetTimeoutTimer = null;
+                _pendingSale = null;
 
-                    // gỡ event theo dõi kết nối
-                    Listener.DeviceDisconnected -= OnListenerDeviceDisconnectedProxy;
-                    Listener.DeviceError -= OnListenerDeviceErrorProxy;
-                    Listener.DeviceReady -= OnListenerDeviceReadyProxy;
-                }
+                // gỡ toàn bộ event đã nối (named handler nên -= khớp đúng)
+                UnwireListenerAndCart();
 
-                if (Cart != null)
-                {
-                    Cart.SaleSucceeded -= HandleSaleSucceeded;
-                    Cart.SaleFailed -= (Action<string>)(reason => SaleFailed?.Invoke(reason));
-                    Cart.VoidSucceeded -= HandleVoidSucceeded;
-                    Cart.VoidFailed -= (Action<string>)(reason => VoidFailed?.Invoke(reason));
-                    Cart.RefundSucceeded -= HandleRefundSucceeded;
-                    Cart.RefundFailed -= (Action<string>)(reason => RefundFailed?.Invoke(reason));
-                    Cart.TipUpdated -= (Action<long>)(c => TipUpdated?.Invoke(c));
-                    Cart.PaymentFinished -= (Action<bool>)(ok => { PaymentFinished?.Invoke(ok); try { Process?.StopPayment(); } catch { } });
-                }
-
-                if (Service != null)
-                {
-                    Service.PairingCodeReceived -= (Action<string>)(c => PairingCodeReceived?.Invoke(c));
-                    Service.PairingSuccess -= (Action<string>)(t => PairingSuccess?.Invoke(t));
-                    Service.PairingStateChanged -= (Action<string, string>)((s, m) => PairingStateChanged?.Invoke(s, m));
-                }
-
+                // gỡ listener khỏi SDK connector (đây mới là cái chặn double-callback thật sự)
                 try { Service?.Connector?.RemoveCloverConnectorListener(Listener); } catch { }
                 try { Service?.Dispose(); } catch { }
 
@@ -420,11 +480,26 @@ namespace NailsChekin.Models.Services
         // Public API mới: gọi thay vì StartSale(...) cũ khi bạn muốn an toàn kết nối
         public void StartSaleWithAutoRetry(long amountCents, string externalId = null, bool cardNotPresent = true, int retries = 1)
         {
+            // Device đang reset → chờ reset xong rồi tự retry
+            if (_isResetting)
+            {
+                _status?.Invoke("Device đang reset. Tự động thử lại sau khi reset xong…");
+                WaitResetThenSale(() => StartSaleWithAutoRetry(amountCents, externalId, cardNotPresent, retries));
+                return;
+            }
+
             // Nếu chưa sẵn sàng thì xếp hàng + ép reconnect ngay
             if (!_deviceReady || Service?.Connector == null)
             {
                 _status?.Invoke("Device not ready. Reconnecting before sale…");
-                _pendingSale = (amountCents, externalId, cardNotPresent, retries);
+                _pendingSale = new PendingSale
+                {
+                    IsFull = false,
+                    AmountCents = amountCents,
+                    ExternalId = externalId,
+                    CardNotPresent = cardNotPresent,
+                    Retries = retries
+                };
                 ScheduleReconnect(immediate: true);
                 return;
             }
@@ -439,7 +514,14 @@ namespace NailsChekin.Models.Services
                 if (retries > 0)
                 {
                     _status?.Invoke("Transport error. Reconnecting to retry sale…");
-                    _pendingSale = (amountCents, externalId, cardNotPresent, retries - 1);
+                    _pendingSale = new PendingSale
+                    {
+                        IsFull = false,
+                        AmountCents = amountCents,
+                        ExternalId = externalId,
+                        CardNotPresent = cardNotPresent,
+                        Retries = retries - 1
+                    };
                     _deviceReady = false;
                     ScheduleReconnect(immediate: true);
                 }
@@ -451,14 +533,32 @@ namespace NailsChekin.Models.Services
             }
         }
 
-        public void StartSaleWithAutoRetry(string orderId, long taxAmount, long tipAmount, long amount, bool repairMode, bool tipsOn, 
+        public void StartSaleWithAutoRetry(string orderId, long taxAmount, long tipAmount, long amount, bool repairMode, bool tipsOn,
                 string externalId = null, bool cardNotPresent = true, int retries = 1)
         {
+            // Device đang reset → chờ reset xong rồi tự retry
+            if (_isResetting)
+            {
+                _status?.Invoke("Device đang reset. Tự động thử lại sau khi reset xong…");
+                WaitResetThenSale(() => StartSaleWithAutoRetry(orderId, taxAmount, tipAmount, amount, repairMode, tipsOn, externalId, cardNotPresent, retries));
+                return;
+            }
+
             // Nếu chưa sẵn sàng thì xếp hàng + ép reconnect ngay
             if (!_deviceReady || Service?.Connector == null)
             {
                 _status?.Invoke("Device not ready. Reconnecting before sale…");
-                _pendingSale = (amount, externalId, cardNotPresent, retries);
+                _pendingSale = new PendingSale
+                {
+                    IsFull = true,
+                    OrderId = orderId,
+                    TaxAmount = taxAmount,
+                    TipAmount = tipAmount,
+                    Amount = amount,
+                    RepairMode = repairMode,
+                    TipsOn = tipsOn,
+                    Retries = retries
+                };
                 ScheduleReconnect(immediate: true);
                 return;
             }
@@ -473,7 +573,17 @@ namespace NailsChekin.Models.Services
                 if (retries > 0)
                 {
                     _status?.Invoke("Transport error. Reconnecting to retry sale…");
-                    _pendingSale = (amount, externalId, cardNotPresent, retries - 1);
+                    _pendingSale = new PendingSale
+                    {
+                        IsFull = true,
+                        OrderId = orderId,
+                        TaxAmount = taxAmount,
+                        TipAmount = tipAmount,
+                        Amount = amount,
+                        RepairMode = repairMode,
+                        TipsOn = tipsOn,
+                        Retries = retries - 1
+                    };
                     _deviceReady = false;
                     ScheduleReconnect(immediate: true);
                 }
@@ -483,6 +593,23 @@ namespace NailsChekin.Models.Services
                     throw;
                 }
             }
+        }
+
+        // Chờ _isResetting = false (tối đa RESET_WAIT_MS) rồi gọi lại Sale trên thread pool.
+        // Ép nhả cờ sau khi hết thời gian chờ để không lặp vô hạn.
+        private void WaitResetThenSale(Action retrySale)
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                int waited = 0;
+                while (_isResetting && waited < RESET_WAIT_MS)
+                {
+                    System.Threading.Thread.Sleep(200);
+                    waited += 200;
+                }
+                _isResetting = false; // chống lặp nếu reset quá hạn
+                retrySale();
+            });
         }
 
         public void VoidPayment(string paymentId, string orderId) => Service?.VoidPayment(paymentId, orderId);
@@ -512,7 +639,7 @@ namespace NailsChekin.Models.Services
             }
             catch { }
         }
-        
+
         // === KeepAlive & Reconnect ===
 
         private void StartKeepAlive()
@@ -536,6 +663,7 @@ namespace NailsChekin.Models.Services
 
         private void ScheduleReconnect(bool immediate = false)
         {
+            if (_shuttingDown) return;
             if (_reconnecting) return;
             _reconnecting = true;
 
@@ -548,35 +676,30 @@ namespace NailsChekin.Models.Services
             {
                 try
                 {
-                    UI(() => _status?.Invoke("Reconnecting Clover…"));
+                    if (_shuttingDown || _deviceReady) return; // đã teardown hoặc đã ready -> thôi
 
-                    // Bước 1: thử fast-path
-                    //try { Service?.Reconnect(); } catch { /* qua bước 2 */ }
-                    // Chạy các lệnh nặng trên worker
+                    UI(() => _status?.Invoke("Reconnecting Clover… (lần " + (_reconnectAttempt + 1) + ")"));
+
+                    // Bước 1: thử fast-path trên worker (không Wait vô hạn)
                     System.Threading.Tasks.Task.Run(() =>
                     {
                         try { Service?.Reconnect(); } catch { }
-                    }).Wait(1500); // đợi ngắn; không nên Wait vô hạn
+                    }).Wait(1500); // đợi ngắn
 
-                    // Chờ ngắn xem DeviceReady chưa
-                    //Thread.Sleep(1500);
-                    if (!_isConnected)
+                    // Bước 2: nếu chưa ready thì rebuild kết nối
+                    if (!_shuttingDown && !_deviceReady)
                     {
                         try
                         {
-                            // Bước 2: rebuild kết nối
                             if (!string.IsNullOrWhiteSpace(_lastEndpoint))
                             {
                                 Connect(_lastEndpoint, _lastPairingToken ?? string.Empty);
                             }
                             else
                             {
-                                // Nếu đang chạy USB thuần, áp USB config (nếu bạn trả ra được)
                                 var usbCfg = BuildUsbConfig();
                                 if (usbCfg != null)
-                                {
                                     Service.ApplyConfigurationAndConnect(usbCfg, Listener);
-                                }
                             }
                         }
                         catch
@@ -584,16 +707,27 @@ namespace NailsChekin.Models.Services
                             // sẽ backoff và thử lại
                         }
                     }
+
+                    // Bước 3: chờ OnDeviceReady tối đa RECONNECT_READY_GRACE_MS.
+                    // Tránh tear-down máy đang bắt tay (transport up nhưng chưa ready) + giãn nhịp retry (không hammer).
+                    int waited = 0;
+                    while (!_shuttingDown && !_deviceReady && waited < RECONNECT_READY_GRACE_MS)
+                    {
+                        System.Threading.Thread.Sleep(200);
+                        waited += 200;
+                    }
                 }
                 finally
                 {
                     _reconnecting = false;
-                    if (!_isConnected)
+
+                    // Chỉ coi là thành công khi máy THẬT SỰ ready (OnDeviceReady), KHÔNG dựa vào _isConnected lạc quan.
+                    if (!_shuttingDown && !_deviceReady)
                     {
                         _reconnectAttempt++;
-                        ScheduleReconnect(false); // backoff tiếp
+                        ScheduleReconnect(false); // backoff TĂNG dần: 1.5 -> 3 -> 6 -> 12 -> 24 -> 30s
                     }
-                    else
+                    else if (_deviceReady)
                     {
                         _reconnectAttempt = 0;
                     }
@@ -613,10 +747,6 @@ namespace NailsChekin.Models.Services
             // );
             return null; // nếu không dùng USB thuần, cứ để null
         }
-
-        // Proxy để gỡ event trong Cleanup an toàn (tránh null khác instance)
-        private void OnListenerDeviceDisconnectedProxy() { }
-        private void OnListenerDeviceErrorProxy(string code, string msg) { }
-        private void OnListenerDeviceReadyProxy() { }
     }
 }
+

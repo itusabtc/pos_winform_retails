@@ -652,13 +652,51 @@ namespace NailsChekin.Popup
 
         #endregion
 
-        private void btnPairCloverDevice_Click(object sender, EventArgs e)
+        private async void btnPairCloverDevice_Click(object sender, EventArgs e)
         {
-            NailsChekin.Properties.Settings.Default.pairingAuthToken = "";
-            NailsChekin.Properties.Settings.Default.selectedConfig = "WS";
-            NailsChekin.Properties.Settings.Default.Save();
+            try
+            {
+                // 1) Endpoint (wss://IP:port/remote_pay) lấy từ ô cấu hình Clover IP.
+                string endpoint = (txtCloverIPAddress.Text ?? "").Trim();
+                if (string.IsNullOrEmpty(endpoint))
+                    endpoint = Utilitys.GetConfig("clover_ip_address", Constants.clover_ip_address);
 
-            new FormCloverConnectSetting(this, OnPairingCode, OnPairingSuccess, OnPairingState).Show();
+                if (string.IsNullOrWhiteSpace(endpoint))
+                {
+                    MessageBox.Show("Please enter Clover endpoint (ex: wss://192.168.1.10:12345/remote_pay) before pairing.");
+                    return;
+                }
+
+                // 2) Lưu endpoint vào config: ConnectNetworkIfPaired/BeginPairing đọc 'clover_ip_address',
+                //    còn đường connect (GetSelectedConfig) đọc 'lastWSEndpoint' -> đồng bộ cả hai để
+                //    pair xong reconnect đúng địa chỉ.
+                Constants.clover_ip_address = endpoint;
+                Utilitys.SaveConfig("clover_ip_address", endpoint);
+
+                // 3) Reset token = "" để ÉP pair lại từ đầu (máy sẽ hiện pairing code).
+                NailsChekin.Properties.Settings.Default.pairingAuthToken = "";
+                NailsChekin.Properties.Settings.Default.lastWSEndpoint = endpoint;
+                NailsChekin.Properties.Settings.Default.selectedConfig = "WS";
+                NailsChekin.Properties.Settings.Default.Save();
+
+                // 4) Re-init Clover connector TỪ ĐẦU:
+                //    token rỗng -> CloverManager.BeginPairing -> bắn pairing code (FormMain.OnPairingCode hiển thị)
+                //    -> user nhập trên Clover Mini -> OnPairingSuccess lưu token -> OnDeviceReady -> connected.
+                if (parentForm != null)
+                {
+                    await parentForm.InitializeCreditDeviceConnector_Async(true);
+                }
+                else
+                {
+                    // Fallback (không có FormMain): mở form pairing cũ.
+                    new FormCloverConnectSetting(this, OnPairingCode, OnPairingSuccess, OnPairingState).Show();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Clover re-pair error: " + ex.Message);
+                LogHelper.SaveLOG_Payment(ex.Message, "btnPairCloverDevice_Click Exception");
+            }
         }
 
         AlertForm pairingForm;

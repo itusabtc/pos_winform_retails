@@ -215,10 +215,19 @@ namespace NailsChekin.Models.Helper
 
             //Printer POS device
             Constants.printer_name = ConfigLocalHelper.GetConfig("printer_name", "");
+            Constants.pairing_code = ConfigLocalHelper.GetConfig("pairing_code", "");
 
             Constants.pos_store_code = ConfigLocalHelper.GetStoreConfig("store_code", "");
             Constants.pos_store_id = ConfigLocalHelper.GetStoreConfig("store_id", "");
             Constants.pos_timezone = int.Parse(ConfigLocalHelper.GetStoreConfig("timezone", "0"));
+
+            // Receipt Print Setting
+            Constants.chkReceiptCusCheckin = Utilitys.GetConfig("chkReceiptCusCheckin", false);
+            Constants.chkShowPopupConfirmBill = Utilitys.GetConfig("chkShowPopupConfirmBill", false);
+
+            //Pincode
+            Constants.chkPincodeOn = Utilitys.GetConfig("chkPincodeOn", false);
+            Constants.chkPincodeOff = Utilitys.GetConfig("chkPincodeOff", true);
 
             if (load_from_api)
             {

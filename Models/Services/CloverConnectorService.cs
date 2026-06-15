@@ -18,7 +18,7 @@ namespace NailsChekin.Models.Services
 
         const String APPLICATION_ID = "com.clover.CloverExamplePOS:3.0.2";
         CloverDeviceConfiguration USBConfig = new USBCloverDeviceConfiguration("__deviceID__", APPLICATION_ID, false, 1);
-        WebSocketCloverDeviceConfiguration WebSocketConfig = new WebSocketCloverDeviceConfiguration("wss://192.168.1.2:12345/remote_pay", APPLICATION_ID, false, 1, "Nails Solutions POS", "POS-3", NailsChekin.Properties.Settings.Default.pairingAuthToken, null, null, null); // set the 3 delegates in the ctor
+        WebSocketCloverDeviceConfiguration WebSocketConfig = new WebSocketCloverDeviceConfiguration("wss://192.168.1.2:12345/remote_pay", APPLICATION_ID, false, 1, "Nails Solutions POS", "POS-RETAIL", NailsChekin.Properties.Settings.Default.pairingAuthToken, null, null, null); // set the 3 delegates in the ctor
 
         public ICloverConnector Connector { get; private set; }
         public CloverDeviceConfiguration SelectedConfig { get; private set; }
@@ -66,7 +66,7 @@ namespace NailsChekin.Models.Services
             Endpoint = endpoint;
             ApplicationId = APPLICATION_ID;
             PosName = "Nails Solutions POS";
-            PosId = "POS-3";
+            PosId = "POS-RETAIL";
             PairingAuthToken = pairingAuthToken;
             Listener = listener;
 
@@ -85,6 +85,18 @@ namespace NailsChekin.Models.Services
 
             try { Connector?.Dispose(); } catch { }
 
+            // Log chẩn đoán: cho biết chính xác endpoint/token/serial đang dùng để connect.
+            try
+            {
+                string tokenInfo = string.IsNullOrEmpty(pairingAuthToken) ? "EMPTY" : ("len=" + pairingAuthToken.Length);
+                LogHelper.SaveLOG_Payment("endpoint=" + Endpoint + " | token=" + tokenInfo + " | serial=" + PosId + " | appId=" + ApplicationId, "Clover ConnectWebSocket");
+            }
+            catch { }
+
+            // Null guard: thiếu endpoint/token -> báo lỗi rõ ràng thay vì để createICloverConnector(null) văng NullReference.
+            if (SelectedConfig == null)
+                throw new InvalidOperationException("Clover config NULL: thiếu endpoint (wss://IP:port/remote_pay) hoặc pairing token. Hãy Pair lại thiết bị.");
+
             // Tạo connector + mở kết nối + gắn listener
             Connector = CloverConnectorFactory.createICloverConnector(SelectedConfig);
             Connector.InitializeConnection();
@@ -102,11 +114,17 @@ namespace NailsChekin.Models.Services
             }
             else
             {
-                //Lấy thông tin lần kết nối gần nhất
-                string endpoint = NailsChekin.Properties.Settings.Default.lastWSEndpoint == null ? "" : NailsChekin.Properties.Settings.Default.lastWSEndpoint;
-                string pairingAuthToken = NailsChekin.Properties.Settings.Default.pairingAuthToken == null ? "" : NailsChekin.Properties.Settings.Default.pairingAuthToken;
-                if (pairingAuthToken.Trim().Length <= 0 && CurrentPairingToken.Trim().Length > 0)
-                    pairingAuthToken = CurrentPairingToken;
+                // Endpoint: ƯU TIÊN endpoint vừa truyền vào ConnectWebSocket (= clover_ip_address từ
+                // ConnectNetworkIfPaired/Pairing), fallback lastWSEndpoint. Trước đây chỉ đọc lastWSEndpoint
+                // -> nếu nó rỗng/stale/khác clover_ip_address thì connect SAI địa chỉ -> SDK văng NullReference async.
+                string endpoint = !string.IsNullOrWhiteSpace(this.Endpoint)
+                                  ? this.Endpoint
+                                  : (NailsChekin.Properties.Settings.Default.lastWSEndpoint ?? "");
+
+                // Token: ưu tiên token vừa truyền vào, fallback Settings.
+                string pairingAuthToken = !string.IsNullOrWhiteSpace(CurrentPairingToken)
+                                          ? CurrentPairingToken
+                                          : (NailsChekin.Properties.Settings.Default.pairingAuthToken ?? "");
 
                 if (endpoint.Trim().Length > 0 && pairingAuthToken.Trim().Length > 0)
                 {
@@ -116,7 +134,7 @@ namespace NailsChekin.Models.Services
                     WebSocketConfig.OnPairingState = HandlePairingState;
                     WebSocketConfig.pairingAuthToken = pairingAuthToken;
 
-                    selectedConfig = new WebSocketCloverDeviceConfiguration(endpoint, APPLICATION_ID, false, 5, "Nails Solutions POS", "POS-3", pairingAuthToken,
+                    selectedConfig = new WebSocketCloverDeviceConfiguration(endpoint, APPLICATION_ID, false, 5, "Nails Solutions POS", "POS-RETAIL", pairingAuthToken,
                                                           HandlePairingCode, HandlePairingSuccess, HandlePairingState);
                 }
             }

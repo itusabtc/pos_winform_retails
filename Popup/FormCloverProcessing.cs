@@ -11,6 +11,11 @@ namespace NailsChekin.Popup
         public FlowLayoutPanel ButtonsHost => UIStateButtonPanel;   // tên panel bạn đã đặt
         public Label StatusHost => DeviceCurrentStatus;             // tên label bạn đã đặt
 
+        // Hủy giao dịch trực tiếp trên máy Clover (ResetDevice) khi không tìm thấy nút Cancel
+        // động — ví dụ lúc đang "Connecting/Processing" máy chưa gửi InputOptions nên panel
+        // chưa có nút Cancel. Nếu null thì giữ hành vi cũ (chỉ đóng popup).
+        public Action CancelFallback;
+
         public FormCloverProcessing()
         {
             InitializeComponent();
@@ -26,6 +31,9 @@ namespace NailsChekin.Popup
             // Thử kích hoạt đúng nút Cancel trong ButtonsHost
             if (TryClickCancelFrom(ButtonsHost))
                 return;
+
+            // Không tìm thấy nút Cancel (đang Connecting/Processing) -> ép hủy giao dịch trên máy Clover.
+            try { CancelFallback?.Invoke(); } catch { /* hủy là best-effort, không chặn việc đóng form */ }
 
             this.Dispose();
         }

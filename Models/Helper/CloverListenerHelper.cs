@@ -1,5 +1,6 @@
 ﻿using com.clover.remotepay.sdk;
 using com.clover.remotepay.transport;
+using NailsChekin.Models;
 using System;
 using System.Threading;
 
@@ -30,6 +31,8 @@ namespace NailsChekin.Models.Helper
         public event Action DeviceDisconnected;                  // rớt cổng/USB
         public event Action<string, string> DeviceError;         // (code, msg)
         public event Action DeviceReady;                         // thiết bị sẵn sàng
+        public event Action<string, string> InvalidStateTransition; // (requested, current)
+        public event Action<bool> ResetDeviceCompleted;          // true = reset thành công
 
         public CloverListenerHelper(
             Action<string> updateStatus,
@@ -168,7 +171,13 @@ namespace NailsChekin.Models.Helper
         public void OnCustomActivityResponse(CustomActivityResponse response) => _updateStatus?.Invoke("OnCustomActivityResponse !!!");
         public void OnCustomerProvidedData(CustomerProvidedDataEvent response) => _updateStatus?.Invoke("OnCustomerProvidedData !!!");
         public void OnDisplayReceiptOptionsResponse(DisplayReceiptOptionsResponse response) => _updateStatus?.Invoke("OnDisplayReceiptOptionsResponse !!!");
-        public void OnInvalidStateTransitionResponse(InvalidStateTransitionNotification message) => _updateStatus?.Invoke("OnInvalidStateTransitionResponse !!!");
+        public void OnInvalidStateTransitionResponse(InvalidStateTransitionNotification message)
+        {
+            var requested = message?.RequestedTransition ?? "";
+            var current = message?.State ?? "";
+            _updateStatus?.Invoke($"OnInvalidStateTransitionResponse: {requested} <- {current}");
+            InvalidStateTransition?.Invoke(requested, current);
+        }
         public void OnManualRefundResponse(ManualRefundResponse response) => _updateStatus?.Invoke("OnManualRefundResponse !!!");
         public void OnMessageFromActivity(MessageFromActivity response) => _updateStatus?.Invoke("OnMessageFromActivity !!!");
         public void OnPreAuthResponse(PreAuthResponse response) => _updateStatus?.Invoke("OnPreAuthResponse !!!");
@@ -192,7 +201,11 @@ namespace NailsChekin.Models.Helper
         public void OnPrintRefundPaymentReceipt(PrintRefundPaymentReceiptMessage message) => _updateStatus?.Invoke("OnPrintRefundPaymentReceipt !!!");
 
         public void OnReadCardDataResponse(ReadCardDataResponse response) => _updateStatus?.Invoke("OnReadCardDataResponse !!!");
-        public void OnResetDeviceResponse(ResetDeviceResponse response) => _updateStatus?.Invoke("OnResetDeviceResponse !!!");
+        public void OnResetDeviceResponse(ResetDeviceResponse response)
+        {
+            _updateStatus?.Invoke("OnResetDeviceResponse !!!");
+            ResetDeviceCompleted?.Invoke(response?.Success ?? false);
+        }
         public void OnRetrieveDeviceStatusResponse(RetrieveDeviceStatusResponse response) => _updateStatus?.Invoke("OnRetrieveDeviceStatusResponse !!!");
         public void OnRetrievePaymentResponse(RetrievePaymentResponse response) => _updateStatus?.Invoke("OnRetrievePaymentResponse !!!");
         public void OnRetrievePendingPaymentsResponse(RetrievePendingPaymentsResponse response) => _updateStatus?.Invoke("OnRetrievePendingPaymentsResponse !!!");
@@ -217,7 +230,8 @@ namespace NailsChekin.Models.Helper
 
         public void OnTipAdded(TipAddedMessage message)
         {
-            
+            TipAdded?.Invoke(message);
         }
     }
 }
+

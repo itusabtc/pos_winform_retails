@@ -14,15 +14,17 @@ namespace NailsChekin.Models.Services
     {
         private readonly Control _invoker;                    // form chính để BeginInvoke
         private readonly Func<InputOption, EventHandler> _getHandler;
+        private readonly Action _cancelDevice;                // hủy/abort giao dịch trực tiếp trên máy (ResetDevice)
 
         private FormCloverProcessing _popup;
         private bool _active;                                  // <-- cờ phiên thanh toán
         private const string DynTag = "CLOVER_DYN";
 
-        public CloverPaymentProcessUI(Control invoker, Func<InputOption, EventHandler> getHandler)
+        public CloverPaymentProcessUI(Control invoker, Func<InputOption, EventHandler> getHandler, Action cancelDevice = null)
         {
             _invoker = invoker ?? throw new ArgumentNullException(nameof(invoker));
             _getHandler = getHandler ?? throw new ArgumentNullException(nameof(getHandler));
+            _cancelDevice = cancelDevice;
         }
 
         public void StartPayment(IWin32Window owner)
@@ -35,6 +37,7 @@ namespace NailsChekin.Models.Services
                 if (_popup == null || _popup.IsDisposed)
                 {
                     _popup = new FormCloverProcessing();
+                    _popup.CancelFallback = _cancelDevice;   // X khi chưa có nút Cancel -> ResetDevice
                     _popup.FormClosed += (_, __) => { _popup = null; _active = false; };
                     // Căn giữa ngay khi form hiển thị xong (đảm bảo kích thước đã tính)
                     _popup.Shown += (_, __) => CenterPopup(owner);

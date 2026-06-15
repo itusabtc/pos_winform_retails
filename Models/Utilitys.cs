@@ -16,6 +16,13 @@ namespace NailsChekin.Models
 {
     class Utilitys
     {
+        // Random dùng chung cho toàn app. Tránh tạo "new Random()" mỗi lần gọi vì
+        // Random được seed theo Environment.TickCount (~15ms) -> gọi liên tiếp trong
+        // cùng tick sẽ sinh key TRÙNG (trùng cart_item_id / merchant_order_no).
+        // Random không thread-safe nên mọi truy cập phải nằm trong _rngLock.
+        private static readonly Random _rng = new Random();
+        private static readonly object _rngLock = new object();
+
         public static string Convert_To_TimeZone(string date, int timezone)
         {
             DateTime current_date = DateTime.Parse(date);
@@ -624,23 +631,20 @@ namespace NailsChekin.Models
 
         public static string createRamdomKeyNumber()
         {
-            string key = "";
-
-            Random rd = new Random();
-            string chars = "0123456789";
-
-            int count = 0;
-            while (count <= 7)
+            // Chữ số đầu tiên BẮT BUỘC khác 0 (1..9).
+            // Nếu để số 0 đứng đầu, khi nhét vào JSON sẽ thành 'id': 0049947 -> số JSON
+            // không hợp lệ, API model-binding báo lỗi "Input string '0049947' is not a valid integer".
+            // Đồng thời phải giữ ĐÚNG 7 chữ số để API nhận diện đây là temp ticket id (Length >= 7)
+            // và tạo order mới thay vì update.
+            lock (_rngLock)
             {
-                string str = chars[rd.Next(0, chars.Length)].ToString();
-                key += str;
-                count++;
+                string key = _rng.Next(1, 10).ToString();    // chữ số đầu: 1..9
+
+                for (int i = 0; i < 6; i++)
+                    key += _rng.Next(0, 10).ToString();      // 6 chữ số còn lại: 0..9
+
+                return key;                                  // luôn 7 chữ số, không có số 0 đứng đầu
             }
-
-            if (key.Length > 7)
-                key = key.Substring(0, 7);
-
-            return key;
         }
 
 
