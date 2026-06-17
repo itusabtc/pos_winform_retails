@@ -152,11 +152,12 @@ namespace NailsChekin.Models.Reports
                     xrCC_CardNo.Text = payment_info["card_no"] == null ? "" : payment_info["card_no"].ToString();
                     xrCC_AuthCode.Text = payment_info["auth_code"] == null ? "" : payment_info["auth_code"].ToString();
 
-                    string signature_base64 = payment_info["signature_base64"] == null ? "" : payment_info["signature_base64"].ToString();
-                    if (!string.IsNullOrEmpty(signature_base64))
-                        SetPictureFromBase64(xrPicSignature, signature_base64);
-                    else
-                        xrPicSignature.Visible = false;
+                    // Chữ ký: có thể là base64 (Clover/T2) hoặc URL ảnh (P5 trả về signature_url) -> tự nhận diện để load
+                    string signature = payment_info["signature_base64"] == null ? "" : payment_info["signature_base64"].ToString();
+                    if (string.IsNullOrEmpty(signature))
+                        signature = payment_info["signature_url"] == null ? "" : payment_info["signature_url"].ToString();
+
+                    SetSignature(xrPicSignature, signature);
                 }
             }
             catch (Exception ex)
@@ -176,6 +177,78 @@ namespace NailsChekin.Models.Reports
                 return "GIFT CARD";
             //2
             return "CREDIT";
+        }
+
+        // Chữ ký có thể là base64 (Clover/T2) hoặc URL ảnh (P5) -> tự nhận diện rồi load
+        private void SetSignature(XRPictureBox pic, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                pic.Visible = false;
+                return;
+            }
+
+            try
+            {
+                string v = value.Trim();
+                if (v.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || v.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    SetPictureFromUrl(pic, v);
+                else
+                    SetPictureFromBase64(pic, v);
+
+                pic.Visible = pic.Image != null;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.SaveLOG_Printer(ex.Message + Environment.NewLine + ex.StackTrace, "SetSignature Exception - value: " + value);
+                pic.Visible = false;
+            }
+        }
+
+        private void SetPictureFromUrl(XRPictureBox pic, string url)
+        {
+            // .NET Framework 4.7.2: bật TLS 1.2 (mặc định có thể chỉ TLS 1.0) -> tải ảnh HTTPS từ server P5 mới được
+            try
+            {
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12
+                    | System.Net.SecurityProtocolType.Tls11
+                    | System.Net.SecurityProtocolType.Tls;
+            }
+            catch { }
+
+            byte[] bytes;
+            using (var wc = new TimeoutWebClient(15000))   // timeout 15s, tránh treo bản in khi mạng chậm
+            {
+                wc.Headers[System.Net.HttpRequestHeader.UserAgent] = "RetailsPOS";
+                bytes = wc.DownloadData(url);
+            }
+
+            using (var ms = new MemoryStream(bytes))
+            using (var img = Image.FromStream(ms))
+            {
+                pic.Image = (Image)img.Clone(); // clone để không phụ thuộc stream
+            }
+            pic.Sizing = ImageSizeMode.ZoomImage;
+        }
+
+        // WebClient có timeout (WebClient gốc không hỗ trợ Timeout)
+        private class TimeoutWebClient : System.Net.WebClient
+        {
+            private readonly int _timeoutMs;
+            public TimeoutWebClient(int timeoutMs) { _timeoutMs = timeoutMs; }
+
+            protected override System.Net.WebRequest GetWebRequest(Uri address)
+            {
+                var req = base.GetWebRequest(address);
+                if (req != null)
+                {
+                    req.Timeout = _timeoutMs;
+                    var http = req as System.Net.HttpWebRequest;
+                    if (http != null) http.ReadWriteTimeout = _timeoutMs;
+                }
+                return req;
+            }
         }
 
         public void SetPictureFromBase64(XRPictureBox pic, string base64)

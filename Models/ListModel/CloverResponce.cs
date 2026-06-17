@@ -43,15 +43,16 @@ namespace NailsChekin.Models.ListModel
 
         public CloverResponce(SaleResponse response, double surcharge_amount)
         {
-            clover_order_id = response.Payment.externalPaymentId;
+            var p = response?.Payment;
+            clover_order_id = p?.externalPaymentId ?? "";
             orderId = "12345";
-            clover_amount = response.Payment.amount.ToString();
-            clover_tip = response.Payment.tipAmount.ToString();
+            clover_amount = (p?.amount)?.ToString() ?? "0";
+            clover_tip = (p?.tipAmount)?.ToString() ?? "0";
             clover_msg = "";
             clover_status = "Success";
-            payment_id = response.Payment.externalPaymentId;
-            order_id = response.Payment.order.id;
-            employee_id = response.Payment.employee.id;
+            payment_id = p?.externalPaymentId ?? "";
+            order_id = p?.order?.id ?? "";
+            employee_id = p?.employee?.id ?? "";
 
             //SURCHARGE cần tính lại theo đúng số tiền thu được từ clover trả về ( có trường hợp thẻ thiếu tiền ... hoặc đã thanh toán 1 phần )
             clover_surcharge = Utilitys.getSurcharge_From_Paided(double.Parse(clover_amount)).ToString();
@@ -59,15 +60,16 @@ namespace NailsChekin.Models.ListModel
 
         public CloverResponce(SaleResponse response, double surcharge_credit_amount, double surcharge_debit_amount, double dual_price_amount)
         {
-            clover_order_id = response.Payment.externalPaymentId;
+            var p = response?.Payment;
+            clover_order_id = p?.externalPaymentId ?? "";
             orderId = "12345";
-            clover_amount = response.Payment.amount.ToString();
-            clover_tip = response.Payment.tipAmount.ToString();
+            clover_amount = (p?.amount)?.ToString() ?? "0";
+            clover_tip = (p?.tipAmount)?.ToString() ?? "0";
             clover_msg = "";
             clover_status = "Success";
-            payment_id = response.Payment.externalPaymentId;
-            order_id = response.Payment.order.id;
-            employee_id = response.Payment.employee.id;
+            payment_id = p?.externalPaymentId ?? "";
+            order_id = p?.order?.id ?? "";
+            employee_id = p?.employee?.id ?? "";
 
             //SURCHARGE cần tính lại theo đúng số tiền thu được từ clover trả về ( có trường hợp thẻ thiếu tiền ... hoặc đã thanh toán 1 phần )
             //if (dual_price_amount > 0)

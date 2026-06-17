@@ -7,11 +7,9 @@ using NailsChekin.UserControl;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -21,6 +19,7 @@ namespace NailsChekin.Popup
     public partial class FormSaleList : Form
     {
         FormMain parentForm = null;
+        public FormMain ParentMain => parentForm;   // cho FormRefund truy cập thiết bị (Clover/P5) để hoàn tiền
         public string status = "";
         private bool _isSearching = false;
 
@@ -55,15 +54,7 @@ namespace NailsChekin.Popup
         {
             this.Adjust_Screen();
 
-            chkSelectAll.AutoSize = false;
-            chkSelectAll.Appearance = System.Windows.Forms.Appearance.Button;
-            chkSelectAll.FlatStyle = FlatStyle.Flat;
-            chkSelectAll.Text = "✓";
-            chkSelectAll.Font = new Font("Segoe UI", 16f, FontStyle.Bold);
-            chkSelectAll.TextAlign = ContentAlignment.MiddleCenter;
-            chkSelectAll.FlatAppearance.CheckedBackColor = Color.FromArgb(41, 182, 246);
-            chkSelectAll.FlatAppearance.BorderSize = 1;
-            chkSelectAll.FlatAppearance.BorderColor = Color.LightGray;
+            UIHelper.StyleSelectCheckbox(chkSelectAll);
 
             DXPopupMenu popupPaidBy = new DXPopupMenu();
             popupPaidBy.Items.Add(new DXMenuItem() { Caption = "ALL" });
@@ -107,6 +98,13 @@ namespace NailsChekin.Popup
         private void FormSaleList_Shown(object sender, EventArgs e)
         {
             this.SendSearch();
+        }
+
+        protected override void OnActivated(EventArgs e)
+        {
+            base.OnActivated(e);
+            // Sau khi 1 popup con (vd FormRefund) đóng, RoundPanel có thể bị mất bo tròn -> vẽ lại
+            panelLayout_Content?.ReapplyRegion();
         }
 
         private void btnFindNow_Click(object sender, EventArgs e)
@@ -161,7 +159,7 @@ namespace NailsChekin.Popup
 
                 if (responce.StartsWith("Error"))
                 {
-                    MessageBox.Show(responce);
+                    CustomMessageBox.Show(responce);
                     return;
                 }
 
@@ -233,7 +231,7 @@ namespace NailsChekin.Popup
 
             if (responce.StartsWith("Error"))
             {
-                MessageBox.Show(responce);
+                CustomMessageBox.Show(responce);
                 return;
             }
 
@@ -242,6 +240,11 @@ namespace NailsChekin.Popup
             string orderSource = jObj["orderSource"]?.ToString() ?? "POS";
             string paidAmount  = jObj["paidAmount"]?.ToString()  ?? "0";
             string items       = jObj["items"]?.ToString()       ?? "[]";
+
+            string customerId = jObj["customerId"]?.ToString() ?? "0";
+            string customerName = jObj["customerName"]?.ToString() ?? "GUEST";
+            string customerPhone = jObj["customerPhone"]?.ToString() ?? "";
+            this.parentForm.SetCustomerInfo(customerId, customerPhone, customerName, "");
 
             this.parentForm.AddSaleItemToCard(orderId, items, paidAmount, orderSource);
             this.Close(); // dùng Close() để trigger FormClosed cleanup đúng cách
@@ -277,6 +280,7 @@ namespace NailsChekin.Popup
         private void chkSelectAll_CheckedChanged(object sender, EventArgs e)
         {
             bool isChecked = chkSelectAll.Checked;
+            UIHelper.UpdateSelectCheckboxGlyph(chkSelectAll);
             foreach (UCSaleItem ctr in panelTicketsTouch.Content.Controls.OfType<UCSaleItem>())
                 ctr.SetSelected(isChecked);
             btnDeleteSelected.Visible = isChecked;

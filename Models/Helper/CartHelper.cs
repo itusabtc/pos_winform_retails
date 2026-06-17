@@ -380,38 +380,64 @@ namespace NailsChekin.Models.Helper
         }
         public static double GetPaymentChargeTotal(List<PaymentModel> paymentList)
         {
+            if (paymentList == null) return 0;
+
             double total = 0;
             for (int i = 0; i < paymentList.Count; i++)
             {
-                if (paymentList[i].type.Equals("CC"))
-                {
-                    var responces = paymentList[i].responce;
-                    for (int j = 0; j < responces.Count; j++)
-                    {
-                        if (responces[j].clover_status.Equals("Success"))
-                        {
-                            double clover_amount = double.Parse(responces[j].clover_amount) / 100.0;
-                            double clover_surcharge = double.Parse(responces[j].clover_surcharge);  //đang đơn vị $ rồi, nên không cần chia 100 
+                var pm = paymentList[i];
+                if (pm == null || !"CC".Equals(pm.type)) continue;
 
-                            total += Math.Round(clover_amount - clover_surcharge, 2);
-                        }
-                    }
+                var responces = pm.responce;
+                if (responces == null) continue;
+
+                for (int j = 0; j < responces.Count; j++)
+                {
+                    var r = responces[j];
+                    if (r == null || !"Success".Equals(r.clover_status)) continue;
+
+                    double.TryParse(r.clover_amount, out double clover_amount);
+                    double.TryParse(r.clover_surcharge, out double clover_surcharge);  //đang đơn vị $ rồi, nên không cần chia 100
+
+                    total += Math.Round(clover_amount / 100.0 - clover_surcharge, 2);
                 }
             }
             return Math.Round(total, 2);
         }
         public static double GetPaymentCashTotal(List<PaymentModel> paymentList)
         {
+            if (paymentList == null) return 0;
+
             double total = 0;
             for (int i = 0; i < paymentList.Count; i++)
             {
-                if (!paymentList[i].type.Equals("CC"))  //Khác credit đưa vào Cash trước
-                    total += paymentList[i].amount;
+                var pm = paymentList[i];
+                if (pm == null) continue;
+
+                if (!"CC".Equals(pm.type))  //Khác credit đưa vào Cash trước
+                    total += pm.amount;
+            }
+            return Math.Round(total, 2);
+        }
+        public static double GetPaymentChange(List<PaymentModel> paymentList)
+        {
+            if (paymentList == null) return 0;
+
+            double total = 0;
+            for (int i = 0; i < paymentList.Count; i++)
+            {
+                var pm = paymentList[i];
+                if (pm == null) continue;
+
+                if ("CASH".Equals(pm.type))  //Khác credit đưa vào Cash trước
+                    total += (pm.cash_received - pm.amt_due);
             }
             return Math.Round(total, 2);
         }
         public static double GetPaymentTotal_CashDiscount(List<PaymentModel> paymentList)
         {
+            if (paymentList == null) return 0;
+
             double total = 0;
             for (int i = 0; i < paymentList.Count; i++)
             {
@@ -421,6 +447,8 @@ namespace NailsChekin.Models.Helper
         }
         public static bool CheckPaymentMethod(List<PaymentModel> paymentList, string method)
         {
+            if (paymentList == null) return false;
+
             bool exits = false;
             for (int i = 0; i < paymentList.Count; i++)
             {

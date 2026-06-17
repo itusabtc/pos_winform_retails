@@ -85,6 +85,7 @@
             this.tbHeader.Name = "tbHeader";
             this.tbHeader.RowCount = 1;
             this.tbHeader.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.tbHeader.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 16F));
             this.tbHeader.Size = new System.Drawing.Size(1343, 46);
             this.tbHeader.TabIndex = 2;
             // 
@@ -92,10 +93,10 @@
             // 
             this.lbID.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbID.AutoSize = true;
-            this.lbID.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbID.Location = new System.Drawing.Point(42, 14);
+            this.lbID.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbID.Location = new System.Drawing.Point(40, 13);
             this.lbID.Name = "lbID";
-            this.lbID.Size = new System.Drawing.Size(22, 18);
+            this.lbID.Size = new System.Drawing.Size(26, 19);
             this.lbID.TabIndex = 0;
             this.lbID.Text = "ID";
             // 
@@ -103,10 +104,10 @@
             // 
             this.lbDate.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbDate.AutoSize = true;
-            this.lbDate.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbDate.Location = new System.Drawing.Point(137, 14);
+            this.lbDate.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbDate.Location = new System.Drawing.Point(135, 13);
             this.lbDate.Name = "lbDate";
-            this.lbDate.Size = new System.Drawing.Size(47, 18);
+            this.lbDate.Size = new System.Drawing.Size(50, 19);
             this.lbDate.TabIndex = 1;
             this.lbDate.Text = "DATE";
             // 
@@ -114,10 +115,10 @@
             // 
             this.lbCustomer.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbCustomer.AutoSize = true;
-            this.lbCustomer.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCustomer.Location = new System.Drawing.Point(233, 14);
+            this.lbCustomer.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbCustomer.Location = new System.Drawing.Point(235, 13);
             this.lbCustomer.Name = "lbCustomer";
-            this.lbCustomer.Size = new System.Drawing.Size(95, 18);
+            this.lbCustomer.Size = new System.Drawing.Size(92, 19);
             this.lbCustomer.TabIndex = 2;
             this.lbCustomer.Text = "CUSTOMER";
             // 
@@ -125,10 +126,10 @@
             // 
             this.lbProduct.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbProduct.AutoSize = true;
-            this.lbProduct.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbProduct.Location = new System.Drawing.Point(422, 14);
+            this.lbProduct.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbProduct.Location = new System.Drawing.Point(423, 13);
             this.lbProduct.Name = "lbProduct";
-            this.lbProduct.Size = new System.Drawing.Size(93, 18);
+            this.lbProduct.Size = new System.Drawing.Size(91, 19);
             this.lbProduct.TabIndex = 3;
             this.lbProduct.Text = "PRODUCTS";
             // 
@@ -136,10 +137,10 @@
             // 
             this.lbAmount.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbAmount.AutoSize = true;
-            this.lbAmount.Font = new System.Drawing.Font("Microsoft Sans Serif", 11.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbAmount.Location = new System.Drawing.Point(619, 14);
+            this.lbAmount.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbAmount.Location = new System.Drawing.Point(618, 13);
             this.lbAmount.Name = "lbAmount";
-            this.lbAmount.Size = new System.Drawing.Size(73, 18);
+            this.lbAmount.Size = new System.Drawing.Size(76, 19);
             this.lbAmount.TabIndex = 4;
             this.lbAmount.Text = "AMOUNT";
             // 
@@ -147,10 +148,10 @@
             // 
             this.lbCash.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbCash.AutoSize = true;
-            this.lbCash.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCash.Location = new System.Drawing.Point(749, 13);
+            this.lbCash.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbCash.Location = new System.Drawing.Point(751, 13);
             this.lbCash.Name = "lbCash";
-            this.lbCash.Size = new System.Drawing.Size(54, 20);
+            this.lbCash.Size = new System.Drawing.Size(50, 19);
             this.lbCash.TabIndex = 7;
             this.lbCash.Text = "CASH";
             // 
@@ -216,10 +217,11 @@
             // 
             // svgDelete
             // 
+            this.svgDelete.Dock = System.Windows.Forms.DockStyle.Fill;
             this.svgDelete.Location = new System.Drawing.Point(1233, 2);
             this.svgDelete.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.svgDelete.Name = "svgDelete";
-            this.svgDelete.Size = new System.Drawing.Size(47, 41);
+            this.svgDelete.Size = new System.Drawing.Size(47, 42);
             this.svgDelete.SizeMode = DevExpress.XtraEditors.SvgImageSizeMode.Zoom;
             this.svgDelete.SvgImage = ((DevExpress.Utils.Svg.SvgImage)(resources.GetObject("svgDelete.SvgImage")));
             this.svgDelete.TabIndex = 13;

@@ -1,6 +1,7 @@
 ﻿using NailsChekin.Models.Helper;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -340,6 +341,16 @@ namespace NailsChekin.Models
             //}
 
             return 2;
+        }
+
+
+        public static bool IsDevRun()
+        {
+            var exe = Application.ExecutablePath;
+            var p = exe.Replace('/', '\\').ToLowerInvariant();
+            return Debugger.IsAttached
+                   || p.Contains(@"\bin\debug\")
+                   || p.Contains(@"\bin\release\");
         }
 
     }

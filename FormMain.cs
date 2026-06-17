@@ -425,30 +425,6 @@ namespace NailsChekin
                 this.BeginInvoke((Action)ApplyTaxUI);
             else
                 ApplyTaxUI();
-
-            this.ReloadSurchargeOrDualPriceOrCashDiscountSetting();
-        }
-
-        string surCharge_percent = "";
-        string surCharge_debit_percent = "";
-        string surCharge_unit = "";
-        float dual_price_percent = 0;
-        float cash_discount_percent = 0;
-        float cash_discount_product_percent = 0;
-        public void ReloadSurchargeOrDualPriceOrCashDiscountSetting()
-        {
-            //this.cash_discount_percent = Core.CASH_DISCOUNT_PERCENT();
-            //this.cash_discount_product_percent = Core.CASH_DISCOUNT_PRODUCT_PERCENT();
-            //this.dual_price_percent = Core.DUAL_PRICE_PERCENT();
-            //if (this.dual_price_percent > 0)  //hệ thống sử dụng dual price
-            //{
-            //    return;
-            //}
-
-            bool chkSurChargeOn = ConfigLocalHelper.GetConfig("chkSurChargeOn", Constants.chkSurChargeOn);
-            this.surCharge_percent = ConfigLocalHelper.GetConfig("surCharge_percent", Constants.surCharge_percent);
-            this.surCharge_debit_percent = ConfigLocalHelper.GetConfig("surCharge_debit_percent", Constants.surCharge_debit_percent);
-            this.surCharge_unit = ConfigLocalHelper.GetConfig("surCharge_unit", Constants.surCharge_unit);
         }
 
         public void InitFormData(bool reload_menu)
@@ -1049,27 +1025,6 @@ namespace NailsChekin
         #region Payment Function
         private string pincode_payment = "";
 
-        private void SHOW_PAYMENT_PREPAID()
-        {
-            this.UpdatePaymentCartAmount();
-
-            //double total_prepaid = Utilitys.getTotalAmount(txtTotalDeposit.Text);
-            //double total_checkout = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
-            //if (Math.Round(total_checkout) <= 0)
-            //{
-            //    //Validate data trước khi thực hiện payment
-            //    string use_system_credit_setting = "0";
-            //    string error = this.POS_Payment_GetError("0", "0", "0", ref use_system_credit_setting);
-            //    if (!string.IsNullOrEmpty(error))
-            //    {
-            //        CustomMessageBox.Show(error);
-            //        return;
-            //    }
-
-            //    this.POS_CHECKOUT("0", this.paymentList, total_prepaid);
-            //}
-        }
-
         //NEW CLOVER PAYMENT LOGIC !!!
         public List<PaymentModel> paymentList = null;
         public double surcharge_amount = 0;
@@ -1123,16 +1078,16 @@ namespace NailsChekin
                 {
                     if (total_charge > 0)
                     {
-                        //if (Core.USING_DUAL_PRICE())
-                        //{
-                        //    this.dual_price_amount = Utilitys.getDualPrice((total_charge + total_pos_tip), total_pos_tip);
-                        //    total_charge += this.dual_price_amount;
-                        //}
-                        //else
-                        //{
-                        //    this.surcharge_amount = Utilitys.getSurcharge((total_charge + total_pos_tip), total_pos_tip);
-                        //    total_charge += this.surcharge_amount;
-                        //}
+                        if (Core.USING_DUAL_PRICE())
+                        {
+                            this.dual_price_amount = Utilitys.getDualPrice((total_charge + total_pos_tip), total_pos_tip);
+                            total_charge += this.dual_price_amount;
+                        }
+                        else
+                        {
+                            this.surcharge_amount = Utilitys.getSurcharge((total_charge + total_pos_tip), total_pos_tip);
+                            total_charge += this.surcharge_amount;
+                        }
                     }
 
                     if (CreditCardLib.GET_CREDIT_DEVICE() == CREDIT_DEVICE_TYPE.CODE_PAY)
@@ -1218,6 +1173,11 @@ namespace NailsChekin
         }
 
         #region New Clover Process !!!!
+
+        // Chênh lệch làm tròn (vài cent) giữa số tiền đã trả và số tiền cần trả -> coi như đã trả đủ (complete),
+        // tránh việc charge đủ tiền nhưng vẫn bị tạo ra 1 sale OPEN do lệch 1,2 cent.
+        private const double PAYMENT_ROUNDING_TOLERANCE = 0.05;
+
         public void CHECK_PAYMENT_CORRECT(bool check_partical = false)
         {
             if (CreditCardLib.GET_CREDIT_DEVICE() == CREDIT_DEVICE_TYPE.CODE_PAY)
@@ -1258,7 +1218,7 @@ namespace NailsChekin
                 total_amount_request -= total_tip_pos;
 
             LogHelper.SaveLOG_Payment("--4. total_payment: " + total_payment + " -- total_amount_request: " + total_amount_request, "CHECK_PAYMENT_CORRECT");
-            if (Math.Round(total_payment, 2) < Math.Round(total_amount_request, 2))  //Chênh lệch 1, 2 đồng do làm tròn thì coi như complete
+            if (Math.Round(total_payment, 2) < Math.Round(total_amount_request, 2) - PAYMENT_ROUNDING_TOLERANCE)  //Chênh lệch 1, 2 đồng do làm tròn thì coi như complete
             {
                 SaveCartPayment();
                 if (_processUI != null)
@@ -1335,7 +1295,7 @@ namespace NailsChekin
                 total_amount_request -= total_tip_pos;
 
             LogHelper.SaveLOG_Payment("--4.1 total_payment: " + total_payment + " -- total_amount_request: " + total_amount_request, "CHECK_PAYMENT_CORRECT");
-            if (Math.Round(total_payment, 2) < Math.Round(total_amount_request, 2))  //Chênh lệch 1, 2 đồng do làm tròn thì coi như complete
+            if (Math.Round(total_payment, 2) < Math.Round(total_amount_request, 2) - PAYMENT_ROUNDING_TOLERANCE)  //Chênh lệch 1, 2 đồng do làm tròn thì coi như complete
             {
                 //2025-08-16: thu tiền nhiều lần
                 SaveCartPayment();
@@ -1353,317 +1313,55 @@ namespace NailsChekin
 
         public string POS_Payment_GetError(string isCreditCard, string fastPayAmount, string isServiceNow, ref string use_system_credit_setting)
         {
-            //try
-            //{
-            //    this.payment_result = "";
+            string error = "";
+            try
+            {
+                string items = "";
+                int numTicket = 0;
+                string _ticketId = "";
 
-            //    bool require_nails_tech = true;
-            //    if (isServiceNow.Equals("1"))
-            //    {
-            //        string inservice_setting = Constants.inservice_setting;
-            //        if (inservice_setting.Equals("Require Nails Tech"))
-            //            require_nails_tech = true;
-            //        else if (inservice_setting.Equals("No Nails Tech"))
-            //            require_nails_tech = false;
-            //        else if (inservice_setting.Equals("No nails Tech and Services require"))
-            //            require_nails_tech = false;
-            //    }
-            //    else if (isServiceNow.Equals("2"))  //SAVE ALLOW
-            //        require_nails_tech = false;
+                foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
+                {
+                    if (control == null) continue;
 
-            //    //Check ANY Staff
-            //    if (require_nails_tech)
-            //    {
-            //        foreach (UCCartItem control in myCartTouchScrollPanel.Content.Controls.OfType<UCCartItem>())
-            //        {
-            //            if (control.IsAnyNailsTech())
-            //            {
-            //                this.payment_result = "Please add nails tech for service: " + control.service_name;
-            //                return this.payment_result;
-            //            }
-            //        }
-            //    }
+                    string cartOrderId = control.cart_order_id ?? "";
+                    string itemName = (control.item_name ?? "").Replace("'", ""); // tránh vỡ JSON khi tên SP có dấu nháy
 
-            //    bool exits_cash_tip_line = chkCashTip.Checked;
-            //    if (!isServiceNow.Equals("2"))  //SAVE BUTTON
-            //    {
-            //        foreach (UCCartItem control in myCartTouchScrollPanel.Content.Controls.OfType<UCCartItem>())
-            //        {
-            //            if (control.service_id.Trim().Length < 6)
-            //            {
-            //                this.payment_result = "Please add service for this customer!";
-            //                return this.payment_result;
-            //            }
-            //            if (isServiceNow.Equals("0") && (control.service_name.ToUpper().Equals("ANY") || control.service_id.Trim().Length < 6))
-            //            {
-            //                this.payment_result = "Please add service for this customer!";
-            //                return this.payment_result;
-            //            }
+                    items += @"{
+                                'orderId': '" + (string.IsNullOrEmpty(cartOrderId) ? "0" : cartOrderId) + @"',
+                                'itemId': " + control.item_id + @",
+                                'itemName': '" + itemName + @"',
+                                'qty': " + control.quantity + @",
+                                'price': " + Utilitys.getTotalAmount(control.price ?? "0") + @",
+                                'priceDiscount': 0,
+                                'discount': 0,
+                                'subTotal': " + control.subTotal() + @"
+                            },";
 
-            //            if (control.cash_tip.Equals("1"))
-            //            {
-            //                exits_cash_tip_line = true;
-            //            }
-            //        }
-            //    }
+                    if (cartOrderId.Trim().Length > 0 && !cartOrderId.Equals("0"))
+                    {
+                        if (!_ticketId.Contains(cartOrderId))
+                        {
+                            _ticketId += cartOrderId + ",";
+                            numTicket++;
+                        }
+                    }
+                }
 
-            //    string couponCode = txtCouponCode.Text;
-            //    string coupon_discountPrice = txtTotalCoupon.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalCoupon.Text.Trim()).ToString();
+                if (numTicket >= 2)
+                {
+                    return "Please check sale order to Process. no combine order apply";
+                }
 
-            //    string gift_card_no = txtGiftCardCode.Text;
-            //    string giftcard_value = txtGiftCardAmount.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtGiftCardAmount.Text).ToString();
-
-            //    string voucher_code = txtVoucherCode.Text;
-            //    string voucher_amount = txtTotalReedemVoucher.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalReedemVoucher.Text.Trim()).ToString();
-
-            //    string total_redeem = txtTotalReedem.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalReedem.Text).ToString();
-            //    string redeem_balance = this.reward_balance.Length <= 0 ? "0" : this.reward_balance;
-            //    if (!Core.USING_REWARD_PERCENT())
-            //    {
-            //        if (double.Parse(total_redeem) > double.Parse(redeem_balance))
-            //        {
-            //            this.payment_result = "Please check Reward amount";
-            //            return this.payment_result;
-            //        }
-            //    }
-
-            //    string cusId = "0"; //GUEST
-            //    foreach (UCCustomerDrapHere control in panelItemDrapHere.Controls.OfType<UCCustomerDrapHere>())
-            //    {
-            //        cusId = control.id;
-            //    }
-
-            //    //Check xem có phải đang vào Pending Payment để thanh toán / update cho ticket này không
-            //    string _ticketId = "";
-            //    int numTicket = 0;
-            //    int lỉne = 0;
-            //    bool exits_new_ticket = false;
-            //    bool exits_item_in_current_ticket = false;
-            //    foreach (UCCartItem control in myCartTouchScrollPanel.Content.Controls.OfType<UCCartItem>())
-            //    {
-            //        lỉne++;
-
-            //        if (control.ticketId.Trim().Length > 0 && !control.ticketId.Equals("0"))
-            //        {
-            //            if (!_ticketId.Contains(control.ticketId))
-            //            {
-            //                _ticketId += control.ticketId + ",";
-            //                numTicket++;
-            //            }
-
-            //            if (control.ticketId.Equals(this.selected_ticket))  //ticket đang update
-            //                exits_item_in_current_ticket = true;
-            //        }
-            //        else
-            //        {
-            //            exits_new_ticket = true;
-            //        }
-
-            //        if (!isServiceNow.Equals("1") && control.is_quick_menu && !Constants.quickmenu_checkOut.Equals("ALLOW"))
-            //        {
-            //            this.payment_result = "Please select service quickmenu on line: " + lỉne;
-            //            return this.payment_result;
-            //        }
-
-            //        if (isServiceNow.Equals("0") && control.IsAnyNailsTech())
-            //        {
-            //            this.payment_result = "Please select nails tech for service: " + control.service_name + " on line: " + lỉne;
-            //            return this.payment_result;
-            //        }
-
-            //        //Done hết mới cho payment
-            //        if (Core.GET_PAYMENT_MODE() == PAYMENT_MODE.USING_SERVICE_NOW)
-            //        {
-            //            if (isServiceNow.Equals("0") && control.staff_done.Equals("0"))
-            //            {
-            //                this.payment_result = "Please ask " + control.staff_name.ToUpper() + " to complete and mark " + control.service_name.ToUpper() + " as Done before payment.";
-            //                return this.payment_result;
-            //            }
-            //        }
-            //    }
-
-            //    //if (isServiceNow.Equals("1"))  //Nếu bấm Service Now thì không cho add ticket khác 
-            //    //{
-            //    //    if (numTicket >= 2)
-            //    //    {
-            //    //        return "Please check ticket to Service Now: not allow add combine mode. Please reset PAYMENT CART !!!";
-            //    //    }
-            //    //}
-            //    if (this.selected_ticket_combine)
-            //    {
-            //        if (numTicket <= 1)
-            //        {
-            //            this.payment_result = "Please check the selected combine tickets. Currently only one ticket is selected. Please enter the CANCEL button to reset CART CHECKOUT";
-            //            return this.payment_result;
-            //        }
-            //    }
-
-            //    if (this.repair_ticket_mode)  //Repair ticket chỉ thao tác cho 1 ticket
-            //    {
-            //        if (numTicket >= 2)
-            //        {
-            //            this.payment_result = "Please check ticket to Repair. no combine ticket apply";
-            //            return this.payment_result;
-            //        }
-            //    }
-
-            //    //Check trường hợp các tiệm xài nút SAVE chọn ticket này nhưng ruột của ticket khác mà không phải combine
-            //    if (!string.IsNullOrEmpty(this.selected_ticket) && !this.selected_ticket_combine)
-            //    {
-            //        if (!exits_new_ticket && !exits_item_in_current_ticket)
-            //        {
-            //            this.payment_result = "Please check ticket to process: not allow add service for another ticket to current selected ticket";
-            //            return this.payment_result;
-            //        }
-            //    }
-
-            //    //CHECK COMBINE HAY KHÔNG
-            //    string error = "";
-            //    bool is_combine_ticket = MainCart.checkIsCombine(myCartTouchScrollPanel, ref error);
-            //    if (!string.IsNullOrEmpty(error))
-            //    {
-            //        this.payment_result = "Error: " + error;
-            //        return this.payment_result;
-            //    }
-
-            //    if (is_combine_ticket && this.repair_ticket_mode)
-            //    {
-            //        this.payment_result = "Not Allow Repair Ticket To Combine Payment !!!";
-            //        return this.payment_result;
-            //    }
-
-            //    //CHECK INSERVICE Condition => INSERVICE VẪN CHO SAVE HOẶC PAYMENT
-            //    //bool is_inservice = MainCart.checkIsInservice(myCartTouchScrollPanel, (isServiceNow.Equals("1") ? true : false), (isServiceNow.Equals("0") ? true : false), ref error);
-            //    //if (!string.IsNullOrEmpty(error))
-            //    //{
-            //    //    return "Error: " + error;
-            //    //}
-
-            //    string ticket_update_id = "";
-            //    if (!is_combine_ticket)
-            //        ticket_update_id = MainCart.getCurrentTicketId(myCartTouchScrollPanel, this.selected_ticket, ref error);
-            //    else
-            //        ticket_update_id = MainCart.getCurrentTicketCombineId(myCartTouchScrollPanel, this.selected_ticket_combine_id, ref error);
-
-            //    if (!string.IsNullOrEmpty(error))
-            //    {
-            //        this.payment_result = "Error: " + error;
-            //        return this.payment_result;
-            //    }
-
-            //    string spId = "";
-            //    string spName = "";
-            //    string spPrice = "";
-            //    string spUnitPrice = "";
-            //    string spDiscount = "";
-            //    string spTax = "";
-            //    string spQuantity = "";
-            //    string spStaff = "";
-            //    string spTip = "";
-            //    string spTicket = "";
-            //    string spColor = "";
-            //    string spCatId = "";
-
-            //    foreach (UCCartItem control in myCartTouchScrollPanel.Content.Controls.OfType<UCCartItem>())
-            //    {
-            //        spId += control.service_id + "_";
-            //        spName += control.service_name + "_";
-            //        spPrice += (control.price.Trim().Length <= 0 ? "0" : control.price.Trim()) + "_";
-            //        spUnitPrice += (control.price.Trim().Length <= 0 ? "0" : control.price.Trim()) + "_";
-            //        spDiscount += (control.discount.Trim().Length <= 0 ? "0" : control.discount.Trim()) + "_";
-            //        spTax += "0" + "_";
-            //        spQuantity += (control.quantity.Trim().Length <= 0 ? "1" : control.quantity.Trim()) + "_";
-            //        spStaff += control.staff_id + "_";
-
-            //        spTip += (control.tip.Trim().Length <= 0 ? "0" : control.tip) + "_";
-            //        spTicket += (control.ticketId.Trim().Length <= 0 ? "0" : control.ticketId) + "_"; //Combine ticket, item
-
-            //        spColor += (control.color.Trim().Length <= 0 ? "NA" : control.color) + "_";
-            //        spCatId += (control.catalog_id.Trim().Length <= 0 ? "0" : control.catalog_id) + "_";
-
-            //        if (isServiceNow.Equals("0") && !this.repair_ticket_mode)
-            //        {
-            //            if ((control.price.Trim().Length <= 0 || control.price.Trim().Equals("0"))
-            //                && (control.tip.Trim().Length <= 0 || control.tip.Equals("0")))  //Aloow Price = 0
-            //            {
-            //                this.payment_result = "Error: Please enter service price";
-            //                return this.payment_result;
-            //            }
-            //        }
-
-            //        //Check duplicate
-            //    }
-
-            //    if (string.IsNullOrEmpty(spId) && string.IsNullOrEmpty(spStaff))
-            //    {
-            //        this.payment_result = "Error: Payment cart blank !!!";
-            //        return this.payment_result;
-            //    }
-
-            //    if (!isServiceNow.Equals("2") && (spId.Trim().Length <= 0 || spStaff.Trim().Length <= 0))
-            //    {
-            //        this.payment_result = "Please check nails technician, services";
-            //        return this.payment_result;
-            //    }
-
-            //    if (isServiceNow.Equals("0") && isCreditCard.Equals("1"))
-            //    {
-            //        //Check CLover Connect
-            //        MainPOS mainPOS = new MainPOS();
-            //        use_system_credit_setting = mainPOS.GetStoreSetting("use_system_credit_setting");
-            //        if (use_system_credit_setting.Equals("1")) //On dung Clover
-            //        {
-            //            if (exits_cash_tip_line)
-            //            {
-            //                this.payment_result = "You Can Not Add Cash Tip With Credit Card Payment Here, Please Go to Adjust After Payment";
-            //                return this.payment_result;
-            //            }
-
-            //            if (Constants.credit_card_device.Equals("CLOVER"))
-            //            {
-            //                if (!cloverStatus)
-            //                {
-            //                    //this.ReconnectCloverConnector();  //Auto load on backgound !!!
-            //                    FormCloverReConnect frm = new FormCloverReConnect(this);
-            //                    frm.ShowDialog(this);
-            //                    frm.Dispose();
-
-            //                    this.payment_result = "Waiting Clover Connect";
-            //                    return this.payment_result;
-            //                }
-
-            //                //Nếu Payment Credit thì lưu lại LOG ticket trên server, restore khi bị lỗi
-            //                //string msg = this.POS_TEMP(isCreditCard, "0", fastPayAmount, this.paymentList, 0);
-            //                //if (msg.Trim().Length > 0)
-            //                //{
-            //                //    return msg;
-            //                //}
-            //            }
-            //            else  //Codeday
-            //            {
-            //                //string msg = this.POS_TEMP(isCreditCard, "0", fastPayAmount, this.paymentList, 0);
-            //                //if (msg.Trim().Length > 0)
-            //                //{
-            //                //    return msg;
-            //                //}
-            //            }
-            //        }
-            //    }
-
-            //    if (!string.IsNullOrEmpty(this.selected_ticket) && cusId.Trim().Length > 0 && !cusId.Equals("0"))
-            //    {
-            //        if (this.selected_ticket.Equals(cusId)) //Chặn trường hợp payment save mất khách hàng
-            //        {
-            //            this.payment_result = "Please check customer for ticket payment !!";
-            //            return this.payment_result;
-            //        }
-            //    }
-            //}
-            //catch (Exception ex)
-            //{
-            //    this.payment_result = "Process Ticket Check-Error Exception: " + ex.Message;
-            //    return this.payment_result;
-            //}
+                if (items.Trim().Length <= 0)
+                {
+                    return "Please check item in cart";
+                }
+            }
+            catch (Exception ex)
+            {
+                return "Process Ticket Check-Error Exception: " + ex.Message;
+            }
 
             return "";
         }
@@ -1680,22 +1378,27 @@ namespace NailsChekin
 
                 foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
                 {
+                    if (control == null) continue;
+
+                    string cartOrderId = control.cart_order_id ?? "";
+                    string itemName = (control.item_name ?? "").Replace("'", ""); // tránh vỡ JSON khi tên SP có dấu nháy
+
                     items += @"{
-                                'orderId': '" + (string.IsNullOrEmpty(control.cart_order_id) ? "0" : control.cart_order_id) + @"',
+                                'orderId': '" + (string.IsNullOrEmpty(cartOrderId) ? "0" : cartOrderId) + @"',
                                 'itemId': " + control.item_id + @",
-                                'itemName': '" + control.item_name + @"',
+                                'itemName': '" + itemName + @"',
                                 'qty': " + control.quantity + @",
-                                'price': " + Utilitys.getTotalAmount(control.price) + @",
+                                'price': " + Utilitys.getTotalAmount(control.price ?? "0") + @",
                                 'priceDiscount': 0,
                                 'discount': 0,
-                                'subTotal': " + control.subTotal() + @" 
+                                'subTotal': " + control.subTotal() + @"
                             },";
 
-                    if (control.cart_order_id.Trim().Length > 0 && !control.cart_order_id.Equals("0"))
+                    if (cartOrderId.Trim().Length > 0 && !cartOrderId.Equals("0"))
                     {
-                        if (!_ticketId.Contains(control.cart_order_id))
+                        if (!_ticketId.Contains(cartOrderId))
                         {
-                            _ticketId += control.cart_order_id + ",";
+                            _ticketId += cartOrderId + ",";
                             numTicket++;
                         }
                     }
@@ -1716,6 +1419,7 @@ namespace NailsChekin
                 items = "[" + items.Substring(0, items.Length - 1) + "]";
 
                 double cash = CartHelper.GetPaymentCashTotal(paymentList);
+                double change = CartHelper.GetPaymentChange(paymentList);
                 double charge = CartHelper.GetPaymentChargeTotal(paymentList);
                 string paymentId = "";
                 string cloverOrderId = "";
@@ -1749,6 +1453,7 @@ namespace NailsChekin
                                   'orderTotal': " + Utilitys.getTotalAmount(lbCart_Total.Text) + @",
                                   'methodOfPayment': " + (isCreditCard.Equals("1") ? "1" : "0") + @",
                                   'cash': " + cash + @",
+                                  'change': " + change + @",
                                   'charge': " + charge + @",
                                   'paymentId': '" + paymentId + @"',
                                   'cloverOrderId': '" + cloverOrderId + @"',
@@ -1761,7 +1466,7 @@ namespace NailsChekin
                                 }";
 
                 string responce = Utilitys.CALL_API("Order/createUpdateOrder", DATA, "POST", true);
-                if (responce.ToUpper().StartsWith("ERROR")) //Fail
+                if (string.IsNullOrEmpty(responce) || responce.ToUpper().StartsWith("ERROR")) //Fail
                 {
                     CustomMessageBox.Show("Process Ticket Error: " + Environment.NewLine + responce);
                     this.EnableDisableControl(true);
@@ -1792,7 +1497,8 @@ namespace NailsChekin
             }
             catch (Exception ex)
             {
-                Utilitys.SaveLOG_Payment(ex.Message, "Process Ticket Error");
+                // Log đầy đủ stack trace + inner exception để xác định chính xác dòng lỗi (lỗi thi thoảng sau khi Charge)
+                Utilitys.SaveLOG_Payment(ex.ToString(), "Process Ticket Error");
                 CustomMessageBox.Show("Process Ticket Error: " + ex.Message);
                 this.EnableDisableControl(true);
             }
@@ -2348,47 +2054,6 @@ namespace NailsChekin
 
         #endregion T2 process time out
 
-
-        public string CodePay_Payment_WLAN_Simple(double total_credit_amount, double amount_charge)
-        {
-            if (!CodePay_CheckConnect())
-            {
-                CustomMessageBox.Show("Please check CodePay WLAN Connection !!!");
-                return "";
-            }
-
-            this.curent_order_payment_id = Utilitys.createRamdomKey();
-            if (string.IsNullOrEmpty(this.current_clover_token))
-                this.current_clover_token = "CODEPAY_12999";
-
-            //Hàm mày chỉ thu tiền codepay, bắn lệnh qua codepay thu tiền rồi nhận socket !!!!
-            if (amount_charge <= 0)
-            {
-                CustomMessageBox.Show("Please check Amount Charge.");
-                return "";
-            }
-
-            //CALL API PAYMENT CODE PAY
-            total_credit_amount = Math.Round(total_credit_amount, 2);
-            double total_tip = 0;
-
-            string msg = this.CodePay_Pay_Order(this.curent_order_payment_id, total_tip.ToString(), total_credit_amount.ToString(), this.current_clover_token);
-            if (msg.StartsWith("Error"))
-            {
-                CustomMessageBox.Show(msg);
-            }
-            else  //Show Form Processing
-            {
-                frmCreditProcessing = new FormCreditProcessing(this);
-                frmCreditProcessing.StartPosition = FormStartPosition.CenterScreen;
-                frmCreditProcessing.ShowDialog();
-                frmCreditProcessing.Dispose();
-                frmCreditProcessing = null;
-            }
-
-            return "";
-        }
-
         public async Task<string> CodePay_Payment_WLAN_SimpleAsync(double total_credit_amount, double amount_charge)
         {
             // ❗ Nếu đã dùng CodePayHelper rồi thì KHÔNG cần chặn vì chưa connect
@@ -2477,6 +2142,7 @@ namespace NailsChekin
                     lbCart_AmtDue.Text = "$0.00";
                     lbCart_Tender.Text = "$0.00";
                     lbCart_Paided.Text = "$0.00";
+                    kb.DefaultValue = ""; kb.Value = "";
 
                     this.pincode_payment = "";
 
@@ -2659,6 +2325,21 @@ namespace NailsChekin
 
                 PaymentModel pm = new PaymentModel("CC", (payment?.amount ?? 0L) / 100.0);
                 pm.responce.Add(new CloverResponce(saleResp, surcharge_amount, surcharge_debit_amount, dual_price_amount));
+
+                // Lưu thông tin in (thẻ) để form in receipt (TicketReceiptWithSignatue) lấy lên
+                try
+                {
+                    object ct = CloverGet(payment, "cardTransaction");
+                    string last4 = CloverGet(ct, "last4")?.ToString() ?? "";
+                    string card_no = string.IsNullOrEmpty(last4) ? "" : ("****" + last4);
+                    string auth_code = CloverGet(ct, "authCode")?.ToString() ?? "";
+                    string pay_method_id = CloverGet(ct, "cardType")?.ToString() ?? "";
+                    string trans_no = payment?.id ?? "";
+                    string tip = ((payment?.tipAmount ?? 0L) / 100.0).ToString();
+                    pm.SetCreditPrintInfo("", trans_no, pay_method_id, "", card_no, auth_code, "", tip);
+                }
+                catch { }
+
                 paymentList.Add(pm);
 
                 double total_amount = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
@@ -2668,7 +2349,7 @@ namespace NailsChekin
                 lbCart_Tender.Text = "$" + remaining;
 
                 LogHelper.SaveLOG_Payment(PaymentToLogLine(payment) + "  - remaining: " + remaining + " - current_clover_token: " + current_clover_token + " payment_now_mode: " + PAYMENT_NOW_MODE.GIFT_CARD.ToString(), "HandleSaleSucceededOnUi");
-                if (remaining <= 0)
+                if (remaining <= PAYMENT_ROUNDING_TOLERANCE)  //đã trả đủ (kể cả lệch vài cent do làm tròn) -> complete, không tạo sale OPEN
                 {
                     POS_CHECKOUT("0", this.paymentList, total_pay_amount);
                     LogHelper.SaveLOG_Payment(this.payment_result, "Ticket Checkout Now Result");
@@ -2737,12 +2418,14 @@ namespace NailsChekin
         {
             UpdateCreditDeviceStatus("Refund OK");
             CartEnableControl();
+            _deviceRefundTcs?.TrySetResult("OK:" + ExtractCloverRefundTransNo(resp)); // OK + số GD hoàn
         }
 
         private void Clover_RefundFailed(string reason)
         {
             UpdateCreditDeviceStatus("Refund failed: " + reason);
             CartEnableControl();
+            _deviceRefundTcs?.TrySetResult("Error: " + reason); // báo cho FormRefund: hoàn tiền qua máy lỗi
         }
 
         // param type có thể là Payment hoặc object tuỳ CloverManager
@@ -2953,6 +2636,129 @@ namespace NailsChekin
             }
         }
 
+        // ===== Device Refund (Clover + CodePay/P5) dùng cho FormRefund =====
+        // TCS result: "OK:<refund_trans_no>" nếu thành công, "Error: ..." nếu lỗi.
+        private TaskCompletionSource<string> _deviceRefundTcs;
+
+        public class DeviceRefundResult
+        {
+            public bool Skipped;            // không dùng máy (vd đơn tiền mặt) -> chỉ ghi DB
+            public bool Success;            // hoàn tiền qua máy OK
+            public string RefundTransNo = "";  // số giao dịch hoàn (ghi vào refund_transactionNo)
+            public string Error = "";
+        }
+
+        /// <summary>
+        /// Phát lệnh hoàn tiền xuống máy. Clover dùng paymentId, CodePay/P5 dùng cloverOrderId (= merchant_order_no).
+        /// amount theo $. Trả về DeviceRefundResult (Skipped nếu không có ref/đơn tiền mặt).
+        /// </summary>
+        public async Task<DeviceRefundResult> RefundOnDeviceAsync(string paymentId, string cloverOrderId, double amount)
+        {
+            var result = new DeviceRefundResult();
+
+            if (amount <= 0 || (string.IsNullOrEmpty(paymentId) && string.IsNullOrEmpty(cloverOrderId)))
+            {
+                result.Skipped = true; // không có gì để hoàn qua máy
+                return result;
+            }
+
+            string raw;
+            if (CreditCardLib.GET_CREDIT_DEVICE() == CREDIT_DEVICE_TYPE.CODE_PAY)
+                raw = await RefundCodePayAsync(string.IsNullOrEmpty(cloverOrderId) ? paymentId : cloverOrderId, amount);
+            else
+                raw = await RefundCloverAsync(string.IsNullOrEmpty(paymentId) ? cloverOrderId : paymentId, amount);
+
+            if (string.IsNullOrEmpty(raw) || raw.StartsWith("Error"))
+            {
+                result.Error = string.IsNullOrEmpty(raw) ? "Error: Refund failed" : raw;
+                return result;
+            }
+
+            result.Success = true;
+            int idx = raw.IndexOf(':');   // "OK:<transno>"
+            result.RefundTransNo = idx >= 0 ? raw.Substring(idx + 1) : "";
+            return result;
+        }
+
+        // Đọc property của object SDK Clover bằng reflection (tránh phụ thuộc cứng vào tên field theo version SDK)
+        private static object CloverGet(object obj, string prop)
+        {
+            try { return obj == null ? null : obj.GetType().GetProperty(prop)?.GetValue(obj); }
+            catch { return null; }
+        }
+
+        private static string ExtractCloverRefundTransNo(object resp)
+        {
+            try
+            {
+                if (resp == null) return "";
+                var t = resp.GetType();
+                var refundObj = t.GetProperty("Refund")?.GetValue(resp);
+                if (refundObj != null)
+                {
+                    var idProp = refundObj.GetType().GetProperty("id") ?? refundObj.GetType().GetProperty("Id");
+                    var id = idProp?.GetValue(refundObj)?.ToString();
+                    if (!string.IsNullOrEmpty(id)) return id;
+                }
+                return t.GetProperty("PaymentId")?.GetValue(resp)?.ToString() ?? "";
+            }
+            catch { return ""; }
+        }
+
+        private async Task<string> RefundCloverAsync(string paymentId, double amount)
+        {
+            if (!await EnsureCloverReadyAsync(8000))
+                return "Error: Can't connect to clover device, please contact admin !";
+
+            var tcs = new TaskCompletionSource<string>();
+            _deviceRefundTcs = tcs;
+            try
+            {
+                long cents = (long)Math.Round(amount * 100, 0);
+                _clover.RefundPayment(paymentId, cents);
+
+                // Kết quả về qua event Clover_RefundSucceeded/Clover_RefundFailed -> complete tcs
+                var done = await Task.WhenAny(tcs.Task, Task.Delay(120000));
+                return done == tcs.Task ? tcs.Task.Result : "Error: Clover refund timeout";
+            }
+            finally { _deviceRefundTcs = null; }
+        }
+
+        private async Task<string> RefundCodePayAsync(string merchantOrderNo, double amount)
+        {
+            // T2 đi qua transport + notify (CodePay_Process_T2_Notify) khác, chưa hook refund -> báo rõ thay vì treo timeout
+            if (CreditCardLib.GET_CODEPAY_DEVICE() == CODEPAY_DEVICE.T2)
+                return "Error: Refund qua CodePay T2 chưa hỗ trợ, vui lòng hoàn thủ công trên máy.";
+
+            string amt = Math.Round(amount, 2).ToString();
+
+            var tcs = new TaskCompletionSource<string>();
+            _deviceRefundTcs = tcs;
+            try
+            {
+                // LƯU Ý: KHÔNG gọi CodePay_ShowHide_Processing(true) ở đây.
+                // Form đó dùng ShowDialog (modal) -> block thread, khiến lệnh refund chỉ gửi đi
+                // SAU khi tắt popup. FormRefund đã có trạng thái busy (wait cursor + disable nút) trong lúc await.
+
+                // Gửi lệnh refund; KẾT QUẢ thật trả về qua CodePay_Process_OnMessage (trans_type = 3) -> complete tcs
+                string sendErr;
+                if (P5Lib.Get_P5_ConecttionType_Setting() == P5_CONNECTTION_TYPE.USB)
+                    sendErr = await Task.Run(() => CreditCardLib.CODEPAY_USB_REFUND_ORDER(this, merchantOrderNo, amt, "0"));
+                else
+                    sendErr = await CreditCardLib.CODEPAY_WLAN_REFUND_ORDER_ASYNC(this, merchantOrderNo, amt, "0");
+
+                if (!string.IsNullOrEmpty(sendErr) && sendErr.StartsWith("Error"))
+                    return sendErr;
+
+                var done = await Task.WhenAny(tcs.Task, Task.Delay(150000));
+                return done == tcs.Task ? tcs.Task.Result : "Error: CodePay refund timeout";
+            }
+            finally
+            {
+                _deviceRefundTcs = null;
+            }
+        }
+
         #endregion
 
         #region CodePay Function
@@ -3083,6 +2889,22 @@ namespace NailsChekin
                     {
                         string response_code = jObject["response_code"].ToString();
                         string response_msg = jObject["response_msg"].ToString();
+                        bool ok = response_code.Equals("0");
+
+                        // FormRefund đang chờ kết quả refund qua máy -> trả về cho nó xử lý (không tự show popup ở đây)
+                        if (trans_type.Equals("3") && _deviceRefundTcs != null)
+                        {
+                            string refundTransNo = "";
+                            try
+                            {
+                                var bizd = jObject["biz_data"];
+                                refundTransNo = bizd?["trans_no"]?.ToString() ?? bizd?["merchant_order_no"]?.ToString() ?? "";
+                            }
+                            catch { }
+
+                            _deviceRefundTcs.TrySetResult(ok ? ("OK:" + refundTransNo) : ("Error: " + response_msg));
+                            return;
+                        }
 
                         if (!response_code.Equals("0"))
                         {
@@ -3430,7 +3252,7 @@ namespace NailsChekin
                 //new MenuItemDef { Text = "CLOSE OUT",   Command = MainCommand.CloseOut },
 
                 new MenuItemDef { Text = "CASH DRAWER", Command = MainCommand.CashDrawer },
-                new MenuItemDef { Text = "BUY SUPPLY",  Command = MainCommand.BuySupply },
+                //new MenuItemDef { Text = "BUY SUPPLY",  Command = MainCommand.BuySupply },
             });
             _footer.ItemClicked += Footer_ItemClicked;
             _footer.SelectCommand(MainCommand.Payment);
@@ -4156,15 +3978,9 @@ namespace NailsChekin
                 lbCart_AmtDue.Text = "$" + tender;
                 lbCart_Tender.Text = "$" + tender;
                 if (kb != null) kb.Value = ""; //Reset Keyboard (kb chỉ tạo sau MainForm_Shown)
-            }
-            );
 
-            //Chạy ngầm save trên server nếu chưa complete
-            _ = Task.Run(() =>
-            {
-                //bool is_combine_ticket = false; // MainCart.checkIsCombine(myCartTouchScrollPanel.Content);
-                //CartHelper.SaveCartPayment(this.selected_ticket, is_combine_ticket, paymentList, false);
-
+                //POS_CHECKOUT đọc control UI (cart items, label...) nên phải chạy trên UI thread.
+                //Trước đây gọi trong Task.Run -> truy cập control cross-thread, gây lỗi chập chờn.
                 this.POS_CHECKOUT(this.selected_ticket, this.paymentList, 0, "1");
                 this.CartEnableControl();
             });

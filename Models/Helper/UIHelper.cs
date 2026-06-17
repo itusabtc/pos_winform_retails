@@ -24,6 +24,40 @@ namespace NailsChekin.Models.Helper
             return null;
         }
 
+        // ===== Checkbox chọn/không chọn kiểu nút (UCSaleItem, UCSaleItemRefund, header select-all) =====
+        // Chưa chọn: ô nền xám nhạt + viền + ký hiệu ☐ (xám) -> user biết là ô bấm chọn.
+        // Đã chọn:  nền xanh + ✓ (trắng).
+        public static void StyleSelectCheckbox(CheckBox chk)
+        {
+            chk.AutoSize = false;
+            chk.Dock = DockStyle.Fill;
+            chk.Appearance = System.Windows.Forms.Appearance.Button;
+            chk.FlatStyle = FlatStyle.Flat;
+            chk.Font = new Font("Segoe UI", 15f, FontStyle.Bold);
+            chk.TextAlign = ContentAlignment.MiddleCenter;
+            chk.UseVisualStyleBackColor = false;
+            chk.BackColor = Color.WhiteSmoke;                                    // nền khi CHƯA chọn
+            chk.FlatAppearance.CheckedBackColor = Color.FromArgb(41, 182, 246);  // xanh khi ĐÃ chọn
+            chk.FlatAppearance.MouseOverBackColor = Color.FromArgb(225, 240, 255);
+            chk.FlatAppearance.BorderSize = 1;
+            chk.FlatAppearance.BorderColor = Color.Silver;
+            UpdateSelectCheckboxGlyph(chk);
+        }
+
+        public static void UpdateSelectCheckboxGlyph(CheckBox chk)
+        {
+            if (chk.Checked)
+            {
+                chk.Text = "✓";
+                chk.ForeColor = Color.White;
+            }
+            else
+            {
+                chk.Text = "☐";
+                chk.ForeColor = Color.Gray;
+            }
+        }
+
         public static void SafeUI(Control c, Action ui)
         {
             if (c.IsDisposed) return;

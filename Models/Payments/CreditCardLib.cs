@@ -176,7 +176,8 @@ namespace NailsChekin.Models.Payments
 
                 Console.WriteLine("Send Data JSON: " + message);
 
-                formMain.active_interval_check_wlan_payment = true;
+                if(!Core.IsDevRun())
+                    formMain.active_interval_check_wlan_payment = true;
 
                 string result = await formMain.SendTextAsync(message).ConfigureAwait(false);
 
@@ -675,7 +676,7 @@ namespace NailsChekin.Models.Payments
             //{"app_id":"wz6012822ca2f1as78","biz_data":{"card_type":"2","confirm_on_terminal":false,"endAmount":"20.00","expires":300,"invokeTransType":"01","is_auto_settlement":false,"limit_length":false,"merchant_order_no":"123456","notify_data":{},"on_screen_signature":false,"on_screen_tip":false,"order_amount":"20.00","pay_method_category":"BANKCARD","pay_scenario":"SWIPE_CARD","print_data":{},"token":"","transTypeTextId":2131755692,"trans_status":"1","trans_type":"1","voice_data":{}},"callAppMode":"2","call_app_mode":"2","closeOrder":false,"device_data":{"alias_name":"","device_name":"","ip_address":"","mac_address":"","port":""},"notificationOrder":false,"notify_data":{"$ref":"$.biz\\_data.notify\\_data"},"print_data":{"$ref":"$.biz\\_data.print\\_data"},"response_code":"110","response_msg":"Operator cancellation[[K026]Manual cancelation by operator]","timestamp":"2024-10-09 09:28:07","topic":"ecrhub.pay.order","voice_data":{"$ref":"$.biz\\_data.voice\\_data"}}
 
             //Success
-            //{"app_id":"wz6012822ca2f1as78","biz_data":{"card_type":"2","confirm_on_terminal":false,"endAmount":"26.25","expires":300,"invokeTransType":"01","is_auto_settlement":false,"limit_length":false,"merchant_order_no":"b0e9176c0ac14ab84LSiT","notify_data":{},"on_screen_signature":false,"on_screen_tip":false,"order_amount":"26.25","pay_method_category":"BANKCARD","pay_scenario":"SWIPE_CARD","print_data":{},"token":"","transTypeTextId":2131755692,"trans_status":"2","trans_type":"1","voice_data":{}},"callAppMode":"2","call_app_mode":"2","closeOrder":false,"device_data":{"alias_name":"","device_name":"","ip_address":"","mac_address":"","port":""},"notificationOrder":false,"notify_data":{"$ref":"$.biz\\_data.notify\\_data"},"print_data":{"$ref":"$.biz\\_data.print\\_data"},"response_code":"0","response_msg":"SUCCESS","timestamp":"2024-10-09 10:04:40","topic":"ecrhub.pay.order","voice_data":{"$ref":"$.biz\\_data.voice\\_data"}}
+            //{"response_code":"0","callAppMode":"5","topic":"ecrhub.pay.order","biz_data":{"pay_scenario":"1","entry_mode":"4","on_screen_signature":true,"merchant_order_no":"2770597","on_screen_tip":false,"order_amount":"11.00","trans_status":"2","merchant_no":"312400003068","merchant_name":"ANT POS DEMO","ref_no":"008200018317","auth_code":"382739","confirm_on_terminal":false,"card_network_type":"2","pay_channel_merchant_id":"123456789012345","trans_end_time":"2026-06-17 05:33:34","expires":0,"card_no":"414720******2282","is_auto_settlement":false,"signature_url":"https://mgt.codepay.us/bis/ip/file/download/CACEC7888F6744A38BE21AB8B2A9733B02C3F9318F8883B48C754F7A2AFEEF9D7A86E275AA77657A54A8E1D36A3704FD2A35A28F8E1BE2B98445D1E27D9D634006E58AB83C1A4F1C41EFCF93B3AE9C232518CD4D702A7DDB","terminal_sn":"WPYB002329000082","trans_type":"1","trans_no":"51124000030260616000005","pay_method_id":"Visa","card_type":"2","pay_channel_terminal_id":"12345678","pay_method_category":"BANKCARD","limit_length":false},"app_id":"wzbb77f4a64a0885ca","response_msg":"SUCCESS"}
 
             string merchant_order_no = "";
             try
@@ -731,6 +732,27 @@ namespace NailsChekin.Models.Payments
                     frmMain.Invoke((MethodInvoker)delegate
                     {
                         PaymentModel _payment = new PaymentModel("CC", double.Parse(order_amount));
+
+                        // Lưu thông tin in (thẻ + chữ ký) để form in receipt (TicketReceiptWithSignatue) lấy lên.
+                        // P5 (EcrHub) trả signature_url + các field thẻ NGAY trong biz_data (không có print_data lồng).
+                        string print_type = biz_data["print_type"] == null ? "" : biz_data["print_type"].ToString();
+                        string signature_base64 = biz_data["signature_url"] == null ? "" : biz_data["signature_url"].ToString();
+
+                        // Fallback: một số firmware có thể lồng trong print_data
+                        var print_data = biz_data["print_data"];
+                        if (string.IsNullOrEmpty(signature_base64) && print_data != null && print_data.Type == JTokenType.Object)
+                        {
+                            if (string.IsNullOrEmpty(print_type))
+                                print_type = print_data["print_type"] == null ? "" : print_data["print_type"].ToString();
+                            signature_base64 = print_data["signature_base64"] == null ? "" : print_data["signature_base64"].ToString();
+                            if (string.IsNullOrEmpty(signature_base64))
+                                signature_base64 = print_data["signature_url"] == null ? "" : print_data["signature_url"].ToString();
+                        }
+                        string pay_method_id = biz_data["pay_method_id"] == null ? "" : biz_data["pay_method_id"].ToString();
+                        string card_network_type = biz_data["card_network_type"] == null ? "" : biz_data["card_network_type"].ToString();
+                        string card_no = biz_data["card_no"] == null ? "" : biz_data["card_no"].ToString();
+                        string auth_code = biz_data["auth_code"] == null ? "" : biz_data["auth_code"].ToString();
+                        _payment.SetCreditPrintInfo(print_type, trans_no, pay_method_id, card_network_type, card_no, auth_code, signature_base64, tip_amount);
 
                         //Responce X 100 lưu giống CLover
                         var cloverResponce = new CloverResponce(merchant_order_no, (double.Parse(order_amount) * 100.0).ToString(), (double.Parse(tip_amount) * 100.0).ToString(), trans_no, frmMain.surcharge_amount, frmMain.surcharge_debit_amount, frmMain.dual_price_amount);

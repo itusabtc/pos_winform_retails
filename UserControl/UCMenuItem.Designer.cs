@@ -45,7 +45,7 @@
             this.btnMenu.Location = new System.Drawing.Point(0, 0);
             this.btnMenu.Margin = new System.Windows.Forms.Padding(2);
             this.btnMenu.Name = "btnMenu";
-            this.btnMenu.Size = new System.Drawing.Size(222, 55);
+            this.btnMenu.Size = new System.Drawing.Size(278, 69);
             this.btnMenu.TabIndex = 26;
             this.btnMenu.Text = "Manicure";
             this.btnMenu.Click += new System.EventHandler(this.btnMenu_Click);
@@ -54,12 +54,12 @@
             // 
             this.Appearance.Font = new System.Drawing.Font("Tahoma", 9F);
             this.Appearance.Options.UseFont = true;
-            this.AutoScaleDimensions = new System.Drawing.SizeF(96F, 96F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(120F, 120F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             this.Controls.Add(this.btnMenu);
             this.Margin = new System.Windows.Forms.Padding(2);
             this.Name = "UCMenuItem";
-            this.Size = new System.Drawing.Size(222, 55);
+            this.Size = new System.Drawing.Size(278, 69);
             this.ResumeLayout(false);
 
         }

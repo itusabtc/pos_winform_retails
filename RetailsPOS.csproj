@@ -361,7 +361,6 @@
     <Compile Include="Models\Helper\LocalConfigHelper.cs" />
     <Compile Include="Models\Helper\LogHelper.cs" />
     <Compile Include="Models\Helper\MonitorSizeHelper.cs" />
-    <Compile Include="Models\Helper\NailsHelper.cs" />
     <Compile Include="Models\Helper\OrderHelper.cs" />
     <Compile Include="Models\Helper\PrinterHelper.cs" />
     <Compile Include="Models\Helper\PrinterLocalHelper.cs" />
@@ -507,11 +506,11 @@
     <Compile Include="Popup\FormComment.Designer.cs">
       <DependentUpon>FormComment.cs</DependentUpon>
     </Compile>
-    <Compile Include="Popup\FormConfirmDepositPayment.cs">
+    <Compile Include="Popup\FormRefund.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Popup\FormConfirmDepositPayment.Designer.cs">
-      <DependentUpon>FormConfirmDepositPayment.cs</DependentUpon>
+    <Compile Include="Popup\FormRefund.Designer.cs">
+      <DependentUpon>FormRefund.cs</DependentUpon>
     </Compile>
     <Compile Include="Popup\FormConfirmPayment.cs">
       <SubType>Form</SubType>
@@ -713,6 +712,12 @@
     <Compile Include="UserControl\RoundedBaseControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="UserControl\UCSaleItemRefund.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControl\UCSaleItemRefund.Designer.cs">
+      <DependentUpon>UCSaleItemRefund.cs</DependentUpon>
+    </Compile>
     <Compile Include="UserControl\UCCustomerSearchResult.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -745,21 +750,6 @@
     </Compile>
     <Compile Include="UserControl\UCDashboardRound.cs">
       <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UserControl\UCItemCheckInOut.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UserControl\UCItemDrapHere.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UserControl\UCItemDrapHere.Designer.cs">
-      <DependentUpon>UCItemDrapHere.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UserControl\UCKeyboard.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-    <Compile Include="UserControl\UCKeyboard.Designer.cs">
-      <DependentUpon>UCKeyboard.cs</DependentUpon>
     </Compile>
     <Compile Include="UserControl\UCMenuItem.cs">
       <SubType>UserControl</SubType>
@@ -833,8 +823,8 @@
     <EmbeddedResource Include="Popup\FormComment.resx">
       <DependentUpon>FormComment.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Popup\FormConfirmDepositPayment.resx">
-      <DependentUpon>FormConfirmDepositPayment.cs</DependentUpon>
+    <EmbeddedResource Include="Popup\FormRefund.resx">
+      <DependentUpon>FormRefund.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Popup\FormConfirmPayment.resx">
       <DependentUpon>FormConfirmPayment.cs</DependentUpon>
@@ -940,6 +930,9 @@
       <DependentUpon>Resources.resx</DependentUpon>
       <DesignTime>True</DesignTime>
     </Compile>
+    <EmbeddedResource Include="UserControl\UCSaleItemRefund.resx">
+      <DependentUpon>UCSaleItemRefund.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="UserControl\UCCustomerSearchResult.resx">
       <DependentUpon>UCCustomerSearchResult.cs</DependentUpon>
     </EmbeddedResource>
@@ -957,15 +950,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="UserControl\UCDashboardRound.resx">
       <DependentUpon>UCDashboardRound.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UserControl\UCItemCheckInOut.resx">
-      <DependentUpon>UCItemCheckInOut.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UserControl\UCItemDrapHere.resx">
-      <DependentUpon>UCItemDrapHere.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UserControl\UCKeyboard.resx">
-      <DependentUpon>UCKeyboard.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="UserControl\UCMenuItem.resx">
       <DependentUpon>UCMenuItem.cs</DependentUpon>

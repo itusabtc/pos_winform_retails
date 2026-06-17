@@ -242,6 +242,12 @@ namespace NailsChekin.Models
             return 0;
         }
 
+        public static double getDualPrice(double total_amount, double total_tip)
+        {
+            //Chưa sử dụng 
+            return 0;
+        }
+
         public static string[] GetFastPays(double grand_total)
         {
             //Giống công thức trên web
@@ -955,22 +961,21 @@ namespace NailsChekin.Models
                 }
                 catch (WebException e)
                 {
-                    using (WebResponse response = e.Response)
-                    {
-                        HttpWebResponse httpResponse = (HttpWebResponse)response;
-                        //Console.WriteLine("Error code: {0}", httpResponse.StatusCode);
-                        using (Stream data = response.GetResponseStream())
-                        using (var reader = new StreamReader(data))
-                        {
-                            string text = reader.ReadToEnd();
-                            if (text.Contains("message"))
-                            {
-                                string message = JObject.Parse(text)["message"].ToString();
-                                return "Error API: " + message;
-                            }
+                    // Timeout / mất kết nối / không phân giải được host => e.Response = null
+                    if (e.Response == null)
+                        return "Error API: " + e.Status + " - " + e.Message;
 
-                            return "Error API: " + text;
+                    using (WebResponse response = e.Response)
+                    using (Stream data = response.GetResponseStream() ?? Stream.Null)
+                    using (var reader = new StreamReader(data))
+                    {
+                        string text = reader.ReadToEnd();
+                        if (!string.IsNullOrEmpty(text) && text.Contains("message"))
+                        {
+                            try { return "Error API: " + JObject.Parse(text)["message"]; } catch { }
                         }
+
+                        return "Error API: " + text;
                     }
                 }
                 catch (Exception e)

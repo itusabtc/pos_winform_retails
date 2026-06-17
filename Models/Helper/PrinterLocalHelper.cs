@@ -20,7 +20,7 @@ namespace NailsChekin.Models.Helper
                     responce = MainReport.Receipt_PrinterData(orderId);
 
                 string payment_info = JObject.Parse(responce)["payment_info"] == null ? "{}" : JObject.Parse(responce)["payment_info"].ToString();
-                if (!payment_info.Equals("{}") && Utilitys.IsValidJson(payment_info) )
+                if (IsCreditPayment(payment_info))   // chỉ đơn thanh toán THẺ mới in kèm form Signature
                 {
                     return PrintDirectTicketWithSignature(orderId, responce);
                 }
@@ -58,6 +58,38 @@ namespace NailsChekin.Models.Helper
             }
 
             return "OK";
+        }
+
+        // payment_info chỉ được coi là THẺ khi: type = CC, hoặc có thông tin thẻ (card_no / pay_method_id / card_network_type / trans_no / auth_code).
+        // Đơn tiền mặt -> payment_info rỗng/"{}" hoặc không có field thẻ -> in receipt thường (không form Signature).
+        private static bool IsCreditPayment(string paymentInfoJson)
+        {
+            if (string.IsNullOrEmpty(paymentInfoJson) || paymentInfoJson.Trim().Equals("{}") || !Utilitys.IsValidJson(paymentInfoJson))
+                return false;
+
+            try
+            {
+                JObject jp = JObject.Parse(paymentInfoJson);
+
+                string type = jp["type"] == null ? "" : jp["type"].ToString();
+                if (type.Equals("CC", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                return HasValue(jp, "card_no")
+                    || HasValue(jp, "pay_method_id")
+                    || HasValue(jp, "card_network_type")
+                    || HasValue(jp, "trans_no")
+                    || HasValue(jp, "auth_code");
+            }
+            catch { return false; }
+        }
+
+        private static bool HasValue(JObject o, string key)
+        {
+            var v = o[key];
+            if (v == null) return false;
+            string s = v.ToString().Trim();
+            return s.Length > 0 && !s.Equals("0");
         }
 
         public static string PrintDirectTicketWithSignature(string orderId, string responce)

@@ -62,7 +62,7 @@ namespace NailsChekin
 
             TraceStep("Main() begin");
 
-            bool isDevRun = IsDevRun();
+            bool isDevRun = Core.IsDevRun();
 
             TraceStep("LoadAllConfigToSystem begin");
             ConfigLocalHelper.LoadAllConfigToSystem();
@@ -341,15 +341,6 @@ namespace NailsChekin
 
             // 5) UI settings
             DevExpress.Utils.AppearanceObject.DefaultMenuFont = new Font("Segoe UI", 16f);
-        }
-
-        private static bool IsDevRun()
-        {
-            var exe = Application.ExecutablePath;
-            var p = exe.Replace('/', '\\').ToLowerInvariant();
-            return Debugger.IsAttached
-                   || p.Contains(@"\bin\debug\")
-                   || p.Contains(@"\bin\release\");
         }
 
         #region Config Enviroment

@@ -52,24 +52,24 @@
             this.tableLayoutPanel1.Controls.Add(this.lbPrice, 2, 0);
             this.tableLayoutPanel1.Controls.Add(this.lbService, 1, 0);
             this.tableLayoutPanel1.Controls.Add(this.lbDate, 0, 0);
-            this.tableLayoutPanel1.Dock = System.Windows.Forms.DockStyle.Top;
+            this.tableLayoutPanel1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tableLayoutPanel1.Location = new System.Drawing.Point(0, 0);
             this.tableLayoutPanel1.Margin = new System.Windows.Forms.Padding(2);
             this.tableLayoutPanel1.Name = "tableLayoutPanel1";
             this.tableLayoutPanel1.RowCount = 1;
             this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.tableLayoutPanel1.Size = new System.Drawing.Size(709, 36);
+            this.tableLayoutPanel1.Size = new System.Drawing.Size(827, 83);
             this.tableLayoutPanel1.TabIndex = 1;
             // 
             // lbAmount
             // 
             this.lbAmount.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbAmount.AutoSize = true;
-            this.lbAmount.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbAmount.Location = new System.Drawing.Point(630, 10);
+            this.lbAmount.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbAmount.Location = new System.Drawing.Point(725, 29);
             this.lbAmount.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lbAmount.Name = "lbAmount";
-            this.lbAmount.Size = new System.Drawing.Size(49, 15);
+            this.lbAmount.Size = new System.Drawing.Size(79, 24);
             this.lbAmount.TabIndex = 4;
             this.lbAmount.Text = "Amount";
             // 
@@ -77,11 +77,11 @@
             // 
             this.lbQty.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbQty.AutoSize = true;
-            this.lbQty.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbQty.Location = new System.Drawing.Point(554, 10);
+            this.lbQty.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbQty.Location = new System.Drawing.Point(640, 29);
             this.lbQty.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lbQty.Name = "lbQty";
-            this.lbQty.Size = new System.Drawing.Size(24, 15);
+            this.lbQty.Size = new System.Drawing.Size(41, 24);
             this.lbQty.TabIndex = 3;
             this.lbQty.Text = "Qty";
             // 
@@ -89,11 +89,11 @@
             // 
             this.lbPrice.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbPrice.AutoSize = true;
-            this.lbPrice.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbPrice.Location = new System.Drawing.Point(460, 10);
+            this.lbPrice.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbPrice.Location = new System.Drawing.Point(531, 29);
             this.lbPrice.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lbPrice.Name = "lbPrice";
-            this.lbPrice.Size = new System.Drawing.Size(35, 15);
+            this.lbPrice.Size = new System.Drawing.Size(53, 24);
             this.lbPrice.TabIndex = 2;
             this.lbPrice.Text = "Price";
             // 
@@ -101,11 +101,11 @@
             // 
             this.lbService.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbService.AutoSize = true;
-            this.lbService.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbService.Location = new System.Drawing.Point(241, 10);
+            this.lbService.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbService.Location = new System.Drawing.Point(271, 29);
             this.lbService.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lbService.Name = "lbService";
-            this.lbService.Size = new System.Drawing.Size(49, 15);
+            this.lbService.Size = new System.Drawing.Size(77, 24);
             this.lbService.TabIndex = 1;
             this.lbService.Text = "Product";
             // 
@@ -113,22 +113,22 @@
             // 
             this.lbDate.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbDate.AutoSize = true;
-            this.lbDate.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbDate.Location = new System.Drawing.Point(36, 10);
+            this.lbDate.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lbDate.Location = new System.Drawing.Point(35, 29);
             this.lbDate.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lbDate.Name = "lbDate";
-            this.lbDate.Size = new System.Drawing.Size(33, 15);
+            this.lbDate.Size = new System.Drawing.Size(53, 24);
             this.lbDate.TabIndex = 0;
             this.lbDate.Text = "Date";
             // 
             // UCCustomerInfoLine
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.tableLayoutPanel1);
             this.Margin = new System.Windows.Forms.Padding(2);
             this.Name = "UCCustomerInfoLine";
-            this.Size = new System.Drawing.Size(709, 36);
+            this.Size = new System.Drawing.Size(827, 83);
             this.tableLayoutPanel1.ResumeLayout(false);
             this.tableLayoutPanel1.PerformLayout();
             this.ResumeLayout(false);

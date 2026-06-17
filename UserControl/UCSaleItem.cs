@@ -1,13 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Drawing;
-using System.Data;
-using System.Text;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using DevExpress.XtraEditors;
 using NailsChekin.Popup;
 using NailsChekin.Models;
 using NailsChekin.MyControls;
@@ -35,16 +28,14 @@ namespace NailsChekin.UserControl
             InitializeComponent();
 
             lbID.Text = id;
-            lbDate.Text = DateTime.TryParse(date, out DateTime dt)
-                ? dt.ToString("MM/dd/yyyy h:mm tt")
-                : date;
+            lbDate.Text = DateTime.TryParse(date, out DateTime dt) ? dt.ToString("MM/dd/yyyy h:mm tt") : date;
             lbCustomer.Text = name + (string.IsNullOrEmpty(phone) ? "" : (Environment.NewLine + phone));
             lbProduct.Text = products;
             lbAmount.Text = "$" + amount;
             lbCash.Text = "$" + cash;
             lbCharge.Text = "$" + charge;
             lbStatus.Text = orderStatusString;
-            if ( !this.status.Equals("0") && ( orderStatusString.Equals("Canceled") || orderStatusString.Equals("Returned")) )
+            if (!this.status.Equals("0") && (orderStatusString.Equals("Canceled") || orderStatusString.Equals("Returned")))
                 lbStatus.ForeColor = System.Drawing.Color.Red;
 
             this.id = id;
@@ -52,26 +43,24 @@ namespace NailsChekin.UserControl
             this.phone = phone;
             this.amount = amount;
 
-            chkSelected.AutoSize = false;
-            chkSelected.Appearance = System.Windows.Forms.Appearance.Button;
-            chkSelected.FlatStyle = FlatStyle.Flat;
-            chkSelected.Text = "✓";
-            chkSelected.Font = new Font("Segoe UI", 16f, FontStyle.Bold);
-            chkSelected.TextAlign = ContentAlignment.MiddleCenter;
-            chkSelected.FlatAppearance.CheckedBackColor = Color.FromArgb(41, 182, 246);
-            chkSelected.FlatAppearance.BorderSize = 1;
-            chkSelected.FlatAppearance.BorderColor = Color.LightGray;
+            Models.Helper.UIHelper.StyleSelectCheckbox(chkSelected);
 
-            if (this.status.Equals("0"))
+            if (!this.status.Equals("0"))   // màn hình lịch sử (history)
             {
-                //lbID.ForeColor = System.Drawing.Color.Red;
-                //lbCash.ForeColor = System.Drawing.Color.Red;
-                //lbStatus.ForeColor = System.Drawing.Color.Red;
-            }
-            else
-            {
-                svgPaymentNow.Visible = false;
                 svgDelete.Visible = false;
+
+                // svgPaymentNow tái sử dụng làm nút Refund: chỉ hiện cho đơn đã thanh toán bằng THẺ (charge > 0)
+                bool showRefund = orderStatusString.Equals("Paid") && Utilitys.getTotalAmount(charge) > 0;
+                if (showRefund)
+                {
+                    svgPaymentNow.SvgImage = GetRefundIcon();
+                    svgPaymentNow.Tag = "REFUND";
+                    svgPaymentNow.Visible = true;
+                }
+                else
+                {
+                    svgPaymentNow.Visible = false;
+                }
             }
         }
 
@@ -95,15 +84,21 @@ namespace NailsChekin.UserControl
 
         private void svgPaymentNow_Click(object sender, EventArgs e)
         {
+            // Màn hình lịch sử: svgPaymentNow đóng vai trò nút Refund (Tag = "REFUND")
+            if ("REFUND".Equals(svgPaymentNow.Tag as string))
+            {
+                OpenRefund();
+                return;
+            }
+
+            // Màn hình SALE OPEN: thanh toán đơn chưa trả
             if (!this.status.Equals("0"))
             {
                 MessageBox.Show("Order Status Incorrect !!!");
                 return;
             }
 
-            FormSaleList form_parent = Models.Helper.UIHelper.GetParentForm<FormSaleList>(this);
-            form_parent.SaleOpen_Payment(this.id);
-
+            Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.SaleOpen_Payment(this.id);
         }
 
         private void svgPrinter_Click(object sender, EventArgs e)
@@ -122,7 +117,7 @@ namespace NailsChekin.UserControl
         public string save_note = "";
         private void svgDelete_Click(object sender, EventArgs e)
         {
-            FormComment frm = new FormComment(this, "", "Delete Commnet", this.save_note, amount,"delete_order");
+            FormComment frm = new FormComment(this, "", "Delete Commnet", this.save_note, amount, "delete_order");
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
@@ -151,13 +146,54 @@ namespace NailsChekin.UserControl
                 return;
             }
 
-            Control form_parent = (FormSaleList)this.Parent.Parent.Parent.Parent;
-            ((FormSaleList)form_parent).SendSearch(true);
+            Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.SendSearch(true);
+        }
+
+        // Icon Refund (SVG) dùng chung cho mọi dòng -> parse 1 lần
+        private static DevExpress.Utils.Svg.SvgImage _refundIcon;
+        private static DevExpress.Utils.Svg.SvgImage GetRefundIcon()
+        {
+            if (_refundIcon == null)
+            {
+                string svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
+                    + "<path fill='#039C23' d='M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z'/>"
+                    + "</svg>";
+                using (var ms = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(svg)))
+                    _refundIcon = DevExpress.Utils.Svg.SvgImage.FromStream(ms);
+            }
+            return _refundIcon;
+        }
+
+        private void OpenRefund() 
+        {
+            FormRefund frm = new FormRefund(this, this.id);
+            frm.StartPosition = FormStartPosition.CenterScreen;
+            frm.ShowDialog(this);
+            bool didRefund = frm.refunded;
+            frm.Dispose();
+
+            // Reload lại list để cập nhật trạng thái sau khi refund
+            if (didRefund)
+                Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.SendSearch();
+        }
+
+        private void svgRefund_Click(object sender, EventArgs e)
+        {
+            FormRefund frm = new FormRefund(this, this.id);
+            frm.StartPosition = FormStartPosition.CenterScreen;
+            frm.ShowDialog(this);
+            bool didRefund = frm.refunded;
+            frm.Dispose();
+
+            // Reload lại list để cập nhật trạng thái sau khi refund
+            if (didRefund)
+                Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.SendSearch();
         }
 
         private void chkSelected_CheckedChanged(object sender, EventArgs e)
         {
             this.selected = chkSelected.Checked;
+            Models.Helper.UIHelper.UpdateSelectCheckboxGlyph(chkSelected);
             Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.UpdateDeleteButtonVisibility();
         }
 

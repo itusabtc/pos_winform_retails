@@ -288,6 +288,16 @@
             UpdateRegionClip();
         }
 
+        /// <summary>
+        /// Đặt lại Region bo góc + vẽ lại. Gọi khi panel bị mất bo tròn
+        /// (vd: sau khi 1 form dialog con hiện lên rồi đóng).
+        /// </summary>
+        public void ReapplyRegion()
+        {
+            UpdateRegionClip();
+            Invalidate();
+        }
+
         private void UpdateRegionClip()
         {
             if (!_clipContent)

@@ -24,45 +24,45 @@ namespace NailsChekin.Models.Helper
                     int num_coloumn = 3;
 
                     int count = 0;
-                    foreach (JObject item in jArray)
-                    {
-                        string staffId = item["id"].ToString();
-                        string staffName = item["first_name"].ToString();
-                        string clockIn = item["clockin"].ToString();
-                        string clockInNum = item["stt"].ToString();
-                        string clockInTime = item["login_time"].ToString();
-                        string pinCode = "";
+                    //foreach (JObject item in jArray)
+                    //{
+                    //    string staffId = item["id"].ToString();
+                    //    string staffName = item["first_name"].ToString();
+                    //    string clockIn = item["clockin"].ToString();
+                    //    string clockInNum = item["stt"].ToString();
+                    //    string clockInTime = item["login_time"].ToString();
+                    //    string pinCode = "";
 
-                        string imgURL = item["avatar"].ToString();
-                        if (item["avatar"].ToString().Trim().Length <= 0)
-                            imgURL = "NA";
+                    //    string imgURL = item["avatar"].ToString();
+                    //    if (item["avatar"].ToString().Trim().Length <= 0)
+                    //        imgURL = "NA";
 
-                        var staff = new NailsChekin.UserControl.UCItemCheckInOut("empl", staffId, staffName, imgURL, pinCode, clockIn, clockInNum, clockInTime)
-                        {
-                            Title = staffName.ToUpper(),
-                            Subtitle = clockIn.Equals("1") ? "CHECKED IN" : "NOT CHECKED IN",
-                            Description = string.IsNullOrEmpty(clockInTime) ? "" : ("TIME: " + DateTimeHelper.format_time_am_pm(clockInTime)),
-                            IconFrameStyle = UserControl.ItemBaseControl.IconFrame.Circle,
-                            CardBaseColor = clockIn.Equals("1") ? ColorHelper.Danger : ColorHelper.Warning
-                        };
+                    //    var staff = new NailsChekin.UserControl.UCItemCheckInOut("empl", staffId, staffName, imgURL, pinCode, clockIn, clockInNum, clockInTime)
+                    //    {
+                    //        Title = staffName.ToUpper(),
+                    //        Subtitle = clockIn.Equals("1") ? "CHECKED IN" : "NOT CHECKED IN",
+                    //        Description = string.IsNullOrEmpty(clockInTime) ? "" : ("TIME: " + DateTimeHelper.format_time_am_pm(clockInTime)),
+                    //        IconFrameStyle = UserControl.ItemBaseControl.IconFrame.Circle,
+                    //        CardBaseColor = clockIn.Equals("1") ? ColorHelper.Danger : ColorHelper.Warning
+                    //    };
 
-                        staff.Location = new Point(locationX, locationY);
-                        staff.Width = ((panel.Width - ((num_coloumn) * 10)) / num_coloumn);
-                        staff.GroupRoot = parent;
-                        panel.Controls.Add(staff);
+                    //    staff.Location = new Point(locationX, locationY);
+                    //    staff.Width = ((panel.Width - ((num_coloumn) * 10)) / num_coloumn);
+                    //    staff.GroupRoot = parent;
+                    //    panel.Controls.Add(staff);
 
-                        if (count > 0 && (count + 1) % num_coloumn == 0)
-                        {
-                            locationY += (staff.Height + 10);
-                            locationX = 10;
-                        }
-                        else
-                        {
-                            locationX += (staff.Width + 10);
-                        }
+                    //    if (count > 0 && (count + 1) % num_coloumn == 0)
+                    //    {
+                    //        locationY += (staff.Height + 10);
+                    //        locationX = 10;
+                    //    }
+                    //    else
+                    //    {
+                    //        locationX += (staff.Width + 10);
+                    //    }
 
-                        count++;
-                    }
+                    //    count++;
+                    //}
                 }
             }
             catch (Exception ex)
@@ -89,56 +89,44 @@ namespace NailsChekin.Models.Helper
                     int num_coloumn = 3;
 
                     int count = 0;
-                    foreach (JObject item in jArray)
-                    {
-                        string staffId = item["id"].ToString();
-                        string staffName = item["first_name"].ToString();
-                        string clockIn = item["clockin"].ToString();
-                        string clockInNum = item["stt"].ToString();
-                        string clockInTime = item["login_time"].ToString();
-                        string pinCode = item["pincode"].ToString();
+                    //foreach (JObject item in jArray)
+                    //{
+                    //    string staffId = item["id"].ToString();
+                    //    string staffName = item["first_name"].ToString();
+                    //    string clockIn = item["clockin"].ToString();
+                    //    string clockInNum = item["stt"].ToString();
+                    //    string clockInTime = item["login_time"].ToString();
+                    //    string pinCode = item["pincode"].ToString();
 
-                        string imgURL = item["avatar"].ToString();
-                        if (item["avatar"].ToString().Trim().Length <= 0)
-                            imgURL = "NA";
+                    //    string imgURL = item["avatar"].ToString();
+                    //    if (item["avatar"].ToString().Trim().Length <= 0)
+                    //        imgURL = "NA";
 
-                        //Control staff = new NailsChekin.UserControl.UCItemCheckInOut("empl", staffId, staffName, imgURL, pinCode, clockIn, clockInNum, clockInTime);
-                        //staff.Location = new Point(locationX, locationY);
-                        //panel.Controls.Add(staff);
+                    //    var staff = new NailsChekin.UserControl.UCItemCheckInOut("empl", staffId, staffName, imgURL, pinCode, clockIn, clockInNum, clockInTime)
+                    //    {
+                    //        Title = staffName.ToUpper(),
+                    //        Subtitle = clockIn.Equals("1") ? "CLOCK OUT" : "CLOCK IN",
+                    //        Description = string.IsNullOrEmpty(clockInTime) ? "" : ("TIME: " + DateTimeHelper.format_time_am_pm(clockInTime)),
+                    //        IconFrameStyle = UserControl.ItemBaseControl.IconFrame.Circle,
+                    //        CardBaseColor = clockIn.Equals("1") ? ColorHelper.Danger : ColorHelper.Warning
+                    //    };
 
-                        //string subTitle = "";
-                        //if (clockInTime.Trim().Length > 0)
-                        //{
-                        //    subTitle = "IN: " + DateTimeHelper.format_time_am_pm(clockInTime);
-                        //    subTitle += Environment.NewLine + "OUT: ";
-                        //    subTitle += Environment.NewLine + "TOTAL HOUR: ";
-                        //}
-
-                        var staff = new NailsChekin.UserControl.UCItemCheckInOut("empl", staffId, staffName, imgURL, pinCode, clockIn, clockInNum, clockInTime)
-                        {
-                            Title = staffName.ToUpper(),
-                            Subtitle = clockIn.Equals("1") ? "CLOCK OUT" : "CLOCK IN",
-                            Description = string.IsNullOrEmpty(clockInTime) ? "" : ("TIME: " + DateTimeHelper.format_time_am_pm(clockInTime)),
-                            IconFrameStyle = UserControl.ItemBaseControl.IconFrame.Circle,
-                            CardBaseColor = clockIn.Equals("1") ? ColorHelper.Danger : ColorHelper.Warning
-                        };
-
-                        staff.Location = new Point(locationX, locationY);
-                        staff.Width = ((panel.Width - ((num_coloumn) * 10)) / num_coloumn);
-                        panel.Controls.Add(staff);
+                    //    staff.Location = new Point(locationX, locationY);
+                    //    staff.Width = ((panel.Width - ((num_coloumn) * 10)) / num_coloumn);
+                    //    panel.Controls.Add(staff);
                         
-                        if (count > 0 && (count + 1) % num_coloumn == 0)
-                        {
-                            locationY += (staff.Height + 10);
-                            locationX = 10;
-                        }
-                        else
-                        {
-                            locationX += (staff.Width + 10);
-                        }
+                    //    if (count > 0 && (count + 1) % num_coloumn == 0)
+                    //    {
+                    //        locationY += (staff.Height + 10);
+                    //        locationX = 10;
+                    //    }
+                    //    else
+                    //    {
+                    //        locationX += (staff.Width + 10);
+                    //    }
 
-                        count++;
-                    }
+                    //    count++;
+                    //}
                 }
             }
             catch (Exception ex)

@@ -152,13 +152,13 @@
             this.lbAddress.TabIndex = 11;
             this.lbAddress.Text = "Address";
             // 
-            // UCCartCustomerMini
+            // UCCustomerSearchResult
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.tableLayoutPanel1);
             this.Margin = new System.Windows.Forms.Padding(3, 4, 3, 4);
-            this.Name = "UCCartCustomerMini";
+            this.Name = "UCCustomerSearchResult";
             this.Size = new System.Drawing.Size(1065, 49);
             this.tableLayoutPanel1.ResumeLayout(false);
             this.tableLayoutPanel1.PerformLayout();
