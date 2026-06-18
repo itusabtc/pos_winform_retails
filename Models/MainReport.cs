@@ -15,6 +15,17 @@ namespace NailsChekin.Models
             return responce;
         }
 
+        // Receipt TỔNG cho combine: gộp item + tiền của tất cả đơn trong nhóm, kèm cash/charge/change
+        public static string CombineReceipt_PrinterData(string combineId, double cash, double charge, double change)
+        {
+            System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+            string endpoint = "Order/combinePrintData?combineId=" + Uri.EscapeDataString(combineId ?? "")
+                + "&cash=" + cash.ToString(inv)
+                + "&charge=" + charge.ToString(inv)
+                + "&change=" + change.ToString(inv);
+            return Utilitys.CALL_API(endpoint, "", "GET", true);
+        }
+
         public static string CloseOutReport_PrinterData(string date, string staffId)
         {
             //string staffs = "";

@@ -180,6 +180,7 @@ namespace NailsChekin.Popup
             }
 
             refunded = true;
+            PrintRefundReceipt();
             CustomMessageBox.Show("Refund successful !!!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }
@@ -253,12 +254,24 @@ namespace NailsChekin.Popup
                 return;
             }
 
+            PrintRefundReceipt();
             CustomMessageBox.Show("Refund successful !!!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             // Reload để cập nhật trạng thái item; nếu đã refund hết -> đóng
             await LoadOrder();
             if (!this.IsDisposed && !btnRefundAll.Enabled)
                 this.Close();
+        }
+
+        // In lại receipt của order sau khi refund: dùng chung template Sale/Combine.
+        // Trạng thái RETURNED do SQL ftTikectPrinter trả về (orderStatus = 3); PrintDirectTicket tự kèm chữ ký nếu là đơn thẻ.
+        private void PrintRefundReceipt()
+        {
+            try
+            {
+                PrinterLocalHelper.PrintDirectTicket(_orderId, "");
+            }
+            catch { /* lỗi in không được chặn flow refund */ }
         }
 
         private void btnClose_Click(object sender, EventArgs e)

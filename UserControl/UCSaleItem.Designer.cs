@@ -55,13 +55,13 @@
             this.tbHeader.BackColor = System.Drawing.Color.White;
             this.tbHeader.ColumnCount = 13;
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 8F));
-            this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 8F));
+            this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 10F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 10F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 18F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 10F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 8F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 8F));
-            this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 10F));
+            this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 8F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 4F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 4F));
             this.tbHeader.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 4F));
@@ -85,7 +85,6 @@
             this.tbHeader.Name = "tbHeader";
             this.tbHeader.RowCount = 1;
             this.tbHeader.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.tbHeader.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 16F));
             this.tbHeader.Size = new System.Drawing.Size(1343, 46);
             this.tbHeader.TabIndex = 2;
             // 
@@ -105,7 +104,7 @@
             this.lbDate.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbDate.AutoSize = true;
             this.lbDate.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbDate.Location = new System.Drawing.Point(135, 13);
+            this.lbDate.Location = new System.Drawing.Point(149, 13);
             this.lbDate.Name = "lbDate";
             this.lbDate.Size = new System.Drawing.Size(50, 19);
             this.lbDate.TabIndex = 1;
@@ -116,7 +115,7 @@
             this.lbCustomer.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbCustomer.AutoSize = true;
             this.lbCustomer.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCustomer.Location = new System.Drawing.Point(235, 13);
+            this.lbCustomer.Location = new System.Drawing.Point(262, 13);
             this.lbCustomer.Name = "lbCustomer";
             this.lbCustomer.Size = new System.Drawing.Size(92, 19);
             this.lbCustomer.TabIndex = 2;
@@ -127,7 +126,7 @@
             this.lbProduct.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbProduct.AutoSize = true;
             this.lbProduct.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbProduct.Location = new System.Drawing.Point(423, 13);
+            this.lbProduct.Location = new System.Drawing.Point(450, 13);
             this.lbProduct.Name = "lbProduct";
             this.lbProduct.Size = new System.Drawing.Size(91, 19);
             this.lbProduct.TabIndex = 3;
@@ -138,7 +137,7 @@
             this.lbAmount.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbAmount.AutoSize = true;
             this.lbAmount.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbAmount.Location = new System.Drawing.Point(618, 13);
+            this.lbAmount.Location = new System.Drawing.Point(645, 13);
             this.lbAmount.Name = "lbAmount";
             this.lbAmount.Size = new System.Drawing.Size(76, 19);
             this.lbAmount.TabIndex = 4;
@@ -149,7 +148,7 @@
             this.lbCash.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbCash.AutoSize = true;
             this.lbCash.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCash.Location = new System.Drawing.Point(751, 13);
+            this.lbCash.Location = new System.Drawing.Point(778, 13);
             this.lbCash.Name = "lbCash";
             this.lbCash.Size = new System.Drawing.Size(50, 19);
             this.lbCash.TabIndex = 7;
@@ -173,7 +172,7 @@
             this.lbCharge.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbCharge.AutoSize = true;
             this.lbCharge.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbCharge.Location = new System.Drawing.Point(848, 13);
+            this.lbCharge.Location = new System.Drawing.Point(875, 13);
             this.lbCharge.Name = "lbCharge";
             this.lbCharge.Size = new System.Drawing.Size(71, 19);
             this.lbCharge.TabIndex = 9;
@@ -184,7 +183,7 @@
             this.lbStatus.Anchor = System.Windows.Forms.AnchorStyles.None;
             this.lbStatus.AutoSize = true;
             this.lbStatus.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lbStatus.Location = new System.Drawing.Point(969, 13);
+            this.lbStatus.Location = new System.Drawing.Point(983, 13);
             this.lbStatus.Name = "lbStatus";
             this.lbStatus.Size = new System.Drawing.Size(69, 19);
             this.lbStatus.TabIndex = 10;

@@ -68,13 +68,67 @@ namespace NailsChekin.Popup
             {
                 txtFromDate.Text = DateTime.Now.ToString("MM-01-yyyy");
                 txtToDate.Text = DateTime.Now.ToString("MM-dd-yyyy");
+
+                SetupCombineButtons();   // chỉ SALE OPEN mới có combine
             }
             else
             {
                 txtFromDate.Text = DateTime.Now.ToString("MM-dd-yyyy");
                 txtToDate.Text = DateTime.Now.ToString("MM-dd-yyyy");
+
+                btnDeleteSelected.Width += 100;
+                btnDeleteSelected.Left = panelControl.Width - btnDeleteSelected.Width - 30;
+                btnDeleteSelected.TitleFontSize = 20f;
             }
 
+        }
+
+        // ===== Combine open sale =====
+        private MyControls.ButtonRound btnCombineSelected;
+        private MyControls.ButtonRound btnRemoveCombine;
+
+        private void SetupCombineButtons()
+        {
+            // Chia vùng nút bulk (btnDeleteSelected) thành 3: DELETE | COMBINE | REMOVE
+            int y = btnDeleteSelected.Location.Y;
+            int h = btnDeleteSelected.Height;
+            int startX = btnDeleteSelected.Location.X;
+            int totalW = panelControl.Width - btnDeleteSelected.Width - 6;
+            int gap = 6;
+            int w = (totalW - gap * 2) / 3;
+
+            btnDeleteSelected.Title = "DELETE";
+            btnDeleteSelected.TitleFontSize = 14F;
+
+            btnCombineSelected = NewBulkButton("COMBINE", Color.FromArgb(20, 113, 148), startX + w + gap, y, w, h);
+            btnCombineSelected.Click += btnCombineSelected_Click;
+
+            btnRemoveCombine = NewBulkButton("REMOVE", Color.FromArgb(150, 90, 20), startX + (w + gap) * 2, y, w, h);
+            btnRemoveCombine.Click += btnRemoveCombine_Click;
+
+            panelControl.Controls.Add(btnCombineSelected);
+            panelControl.Controls.Add(btnRemoveCombine);
+            btnCombineSelected.BringToFront();
+            btnRemoveCombine.BringToFront();
+        }
+
+        private MyControls.ButtonRound NewBulkButton(string title, Color color, int x, int y, int w, int h)
+        {
+            return new MyControls.ButtonRound
+            {
+                BackColor = Color.Transparent,
+                Title = title,
+                TitleBackColor = color,
+                BorderColor = color,
+                TitleForeColor = Color.White,
+                Font = new Font("Microsoft Sans Serif", 14F),
+                TitleFontSize = 14F,
+                Location = new Point(x, y),
+                Size = new Size(w, h),
+                MinimumSize = new Size(60, 36),
+                Cursor = Cursors.Hand,
+                Visible = false
+            };
         }
 
         private void item_paidby_Click(object sender, EventArgs e)
@@ -89,6 +143,8 @@ namespace NailsChekin.Popup
             {
                 panelLayout_Content.Width = this.Width - 10;
                 panelLayout_Content.Height = this.Height - panelLayout_Header.Height - 5;
+
+                panelControl.Width = panelLayout_Content.Width - txtSearchReceipt.Right - 20;
 
                 panel_Content.Height = panelLayout_Content.Height - btnFindNow.Bottom - 25;
                 btnClose.Location = new Point(this.Width - btnClose.Width - 10, btnClose.Location.Y);
@@ -128,7 +184,7 @@ namespace NailsChekin.Popup
                 Text = "Searching... Please wait",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 20f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 26f, FontStyle.Bold),
                 ForeColor = Color.Gray,
                 BackColor = Color.Transparent
             };
@@ -168,7 +224,8 @@ namespace NailsChekin.Popup
                 {
                     var list = new List<(string orderId, string orderDate, string name, string phone,
                         string products, string amount, string cash, string charge,
-                        string orderStatus, string orderStatusString, string orderSource, string paymentStatus)>();
+                        string orderStatus, string orderStatusString, string orderSource, string paymentStatus,
+                        string combineId)>();
                     foreach (JObject obj in JArray.Parse(responce))
                         list.Add((
                             obj["orderId"].ToString(),     obj["orderDate"].ToString(),
@@ -176,7 +233,8 @@ namespace NailsChekin.Popup
                             obj["products"].ToString(),    obj["subtotal"].ToString(),
                             obj["cash"].ToString(),        obj["charge"].ToString(),
                             obj["orderStatus"].ToString(), obj["orderStatusString"].ToString(),
-                            obj["order_source"].ToString(), obj["payment_status"].ToString()
+                            obj["order_source"].ToString(), obj["payment_status"].ToString(),
+                            obj["combine_id"]?.ToString() ?? ""
                         ));
                     return list;
                 });
@@ -196,7 +254,11 @@ namespace NailsChekin.Popup
                     var ctrl = new UCSaleItem(it.orderId, it.orderDate, it.name, it.phone,
                         it.products, it.amount, it.cash, it.charge, currentStatus, it.orderStatusString);
                     if (currentStatus.Equals("0"))
+                    {
                         ctrl.SetOrderUnpaid(it.orderStatus, it.paymentStatus, it.orderSource);
+                    }
+
+                    ctrl.SetCombineId(it.combineId);
                     ctrl.Width = itemWidth;
                     ctrl.Location = new Point(0, locationY);
                     locationY += ctrl.Height + 2;
@@ -246,7 +308,14 @@ namespace NailsChekin.Popup
             string customerPhone = jObj["customerPhone"]?.ToString() ?? "";
             this.parentForm.SetCustomerInfo(customerId, customerPhone, customerName, "");
 
-            this.parentForm.AddSaleItemToCard(orderId, items, paidAmount, orderSource);
+            // Đơn lẻ đã thu 1 phần: nạp lại full payment cũ từ jPayment server trả ngay trong response
+            // (CreateUpdateOrder REPLACE -> phải gửi lại đủ list khi complete, nếu không sẽ mất payment cũ).
+            double paid = Utilitys.getTotalAmount(paidAmount);
+            var priorPayments = paid > 0
+                ? CartHelper.ParsePaymentJson(jObj["paymentJson"]?.ToString())
+                : null;
+
+            this.parentForm.AddSaleItemToCard(orderId, items, paidAmount, orderSource, priorPayments);
             this.Close(); // dùng Close() để trigger FormClosed cleanup đúng cách
         }
 
@@ -283,15 +352,116 @@ namespace NailsChekin.Popup
             UIHelper.UpdateSelectCheckboxGlyph(chkSelectAll);
             foreach (UCSaleItem ctr in panelTicketsTouch.Content.Controls.OfType<UCSaleItem>())
                 ctr.SetSelected(isChecked);
-            btnDeleteSelected.Visible = isChecked;
+            UpdateDeleteButtonVisibility();
         }
 
         public void UpdateDeleteButtonVisibility()
         {
-            bool anySelected = panelTicketsTouch.Content.Controls
-                .OfType<UCSaleItem>()
-                .Any(c => c.selected);
-            btnDeleteSelected.Visible = anySelected;
+            var sel = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>().Where(c => c.selected).ToList();
+            btnDeleteSelected.Visible = sel.Count > 0;
+
+            if (btnCombineSelected != null)   // chỉ SALE OPEN mới có combine
+            {
+                btnCombineSelected.Visible = sel.Count >= 2;
+                btnRemoveCombine.Visible = sel.Any(c => !string.IsNullOrEmpty(c.combine_id));
+            }
+        }
+
+        private async void btnCombineSelected_Click(object sender, EventArgs e)
+        {
+            var sel = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>().Where(c => c.selected).ToList();
+
+            if (sel.Count < 2)
+            {
+                CustomMessageBox.Show("Please select at least 2 orders to combine !!!");
+                return;
+            }
+
+            string posIds = string.Join(",", sel.Where(c => c.order_source == "POS").Select(c => c.id));
+            string webIds = string.Join(",", sel.Where(c => c.order_source != "POS").Select(c => c.id));
+
+            string DATA = @"{ 'posOrderIds': '" + posIds + @"', 'webOrderIds': '" + webIds + @"', 'combineId': '' }";
+            string res = await Task.Run(() => Utilitys.CALL_API("Order/setCombine", DATA, "POST", true));
+            if (this.IsDisposed) return;
+
+            if (string.IsNullOrEmpty(res) || res.ToUpper().StartsWith("ERROR"))
+            {
+                CustomMessageBox.Show("Combine error: " + Environment.NewLine + res);
+                return;
+            }
+
+            // res = combine_id mới -> nạp tất cả đơn đã chọn vào cart và mở màn thanh toán ngay
+            string combineId = res.Trim();
+            var members = sel
+                .Select(c => (id: c.id, source: string.IsNullOrEmpty(c.order_source) ? "POS" : c.order_source))
+                .ToList();
+
+            this.parentForm.LoadCombineToCart(combineId, members);
+            this.Close();
+        }
+
+        private async void btnRemoveCombine_Click(object sender, EventArgs e)
+        {
+            var sel = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>()
+                .Where(c => c.selected && !string.IsNullOrEmpty(c.combine_id)).ToList();
+            string posIds = string.Join(",", sel.Where(c => c.order_source == "POS").Select(c => c.id));
+            string webIds = string.Join(",", sel.Where(c => c.order_source != "POS").Select(c => c.id));
+
+            if (string.IsNullOrEmpty(posIds) && string.IsNullOrEmpty(webIds))
+            {
+                CustomMessageBox.Show("Please select combined orders to remove !!!");
+                return;
+            }
+
+            string DATA = @"{ 'posOrderIds': '" + posIds + @"', 'webOrderIds': '" + webIds + @"' }";
+            string res = await Task.Run(() => Utilitys.CALL_API("Order/removeCombine", DATA, "POST", true));
+            if (this.IsDisposed) return;
+
+            if (res.ToUpper().StartsWith("ERROR"))
+            {
+                CustomMessageBox.Show("Remove combine error: " + Environment.NewLine + res);
+                return;
+            }
+
+            this.SendSearch();
+        }
+
+        // Thanh toán cả combine: nạp item của tất cả đơn trong nhóm (cả POS lẫn WEB) vào cart rồi để cashier thanh toán
+        public void PayCombine(string combineId)
+        {
+            var members = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>()
+                .Where(c => c.combine_id == combineId)
+                .Select(c => (id: c.id, source: string.IsNullOrEmpty(c.order_source) ? "POS" : c.order_source))
+                .ToList();
+            if (members.Count == 0) return;
+
+            this.parentForm.LoadCombineToCart(combineId, members);
+            this.Close();
+        }
+
+        // In 1 receipt TỔNG cho cả combine: cộng cash/charge của tất cả đơn trong nhóm (change = 0 khi in lại).
+        // Nếu combine trả thẻ, ftTikectPrinterCombine trả payment_info thẻ -> PrintDirectTicket tự dùng form chữ ký.
+        public void PrintCombine(string combineId)
+        {
+            var members = panelTicketsTouch.Content.Controls.OfType<UCSaleItem>()
+                .Where(c => c.combine_id == combineId).ToList();
+            if (members.Count == 0)
+            {
+                CustomMessageBox.Show("No combined orders found to print !!!");
+                return;
+            }
+
+            double cash = members.Sum(c => c.cash_amount);
+            double charge = members.Sum(c => c.charge_amount);
+
+            string json = Models.MainReport.CombineReceipt_PrinterData(combineId, cash, charge, 0);
+            if (string.IsNullOrEmpty(json) || json.ToUpper().StartsWith("ERROR"))
+            {
+                CustomMessageBox.Show("Print combine error: " + Environment.NewLine + json);
+                return;
+            }
+
+            Models.Helper.PrinterLocalHelper.PrintDirectTicket("COMBINE", json);
         }
 
         private async void btnDeleteSelected_Click(object sender, EventArgs e)

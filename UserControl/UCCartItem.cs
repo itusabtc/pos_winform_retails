@@ -190,13 +190,13 @@ namespace NailsChekin.UserControl
         {
             this.quantity = new_qty;
             lbQty.Text = new_qty;
-            lbTotal.Text = "$" + Math.Round((double.Parse(price) * double.Parse(quantity)), 2).ToString();
 
-            FormMain form_parent = UIHelper.GetParentForm<FormMain>(this);
-            //form_parent.ResetDefaultFocus();
-
-            //if (check_promotion)
-            //    ((FormMain)form_parent).Check_Promotion(this.item_id, this.item_name, this.price, this.quantity, false);
+            // Cập nhật tổng DÒNG + tổng CART (SUBTOTAL/TAX/TOTAL).
+            // Trước đây chỉ set lbTotal mà KHÔNG gọi UpdatePaymentCartAmount ->
+            // sửa số lượng bằng cách gõ tay (vd 1 -> 10) thì tổng cart giữ nguyên
+            // giá trị cũ -> Save Sale gửi subtotal sai -> receipt in sai tiền.
+            // Đi qua update_parent_cart_amount giống increaseQuantity để đồng bộ.
+            this.update_parent_cart_amount(this.isPromotion.Equals("1") ? false : true);
         }
 
         private void txtProductName_Click(object sender, EventArgs e)

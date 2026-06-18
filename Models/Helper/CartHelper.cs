@@ -378,6 +378,21 @@ namespace NailsChekin.Models.Helper
             }
             return Math.Round(total, 2);
         }
+
+        // Parse full payment list từ jPayment (server trả trong response Order/{id}).
+        // Dùng khi mở lại ĐƠN LẺ để thu tiếp: CreateUpdateOrder xoá + insert lại full list (REPLACE)
+        // nên POS phải nạp prior rồi gửi lại đủ. Trả null nếu rỗng/lỗi -> caller fallback an toàn.
+        // (Combine KHÔNG dùng cái này: server combine cộng dồn delta mới, chỉ cần gửi new.)
+        public static List<PaymentModel> ParsePaymentJson(string paymentJson)
+        {
+            if (string.IsNullOrEmpty(paymentJson)) return null;
+            try { return JsonConvert.DeserializeObject<List<PaymentModel>>(paymentJson); }
+            catch (Exception ex)
+            {
+                try { Utilitys.SaveLOG_Payment(ex.ToString(), "ParsePaymentJson Exception"); } catch { }
+                return null;
+            }
+        }
         public static double GetPaymentChargeTotal(List<PaymentModel> paymentList)
         {
             if (paymentList == null) return 0;

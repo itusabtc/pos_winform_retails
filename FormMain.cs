@@ -628,6 +628,18 @@ namespace NailsChekin
             
         }
 
+        // Tổng đã trả tới hiện tại = phần server đã thu (CHỈ combine, vì combine không nạp prior vào paymentList)
+        //   + tổng payment trong paymentList phiên này.
+        // Đơn lẻ (REPLACE): prior ĐÃ nằm trong paymentList -> external = 0.
+        // Combine (ACCUMULATE): prior KHÔNG trong paymentList -> external = paidAmount (totalPaid các member).
+        // Dùng cho mọi quyết định remaining / complete-vs-partial. KHÔNG dùng cho cash/charge GỬI lên server
+        // (cái đó luôn = GetPayment*Total(paymentList): đơn lẻ=full để REPLACE, combine=new để ACCUMULATE).
+        private double TotalPaidSoFar()
+        {
+            double externalPaid = this.selected_ticket_combine ? Utilitys.getTotalAmount(this.paidAmount) : 0;
+            return Math.Round(externalPaid + CartHelper.GetPaymentTotal(this.paymentList), 2);
+        }
+
         public void UpdatePaymentCartAmount(bool check_promotion = true, bool update_cart = true, bool main_form_onload = false)
         {
             if (main_form_onload)
@@ -683,21 +695,28 @@ namespace NailsChekin
                     btnCart_Tax.Title = "TAX (" + tax_percent + "%)";
                 
                 subTotalIncludeTax = Math.Round(subTotal + this.tax_redeem, 2);
-                total = subTotalIncludeTax - totalCoupon - totalRedeemVoucher - this.salon_credit_redeem; 
+                total = subTotalIncludeTax - totalCoupon - totalRedeemVoucher - this.salon_credit_redeem;
                 if (total < 0)
                     total = 0;
 
-                lbCart_SubTotal.Text = "$" + subTotal;  lbCart_ItemSold.Text = itemSold.ToString();
-                lbCart_Total.Text = "$" + subTotalIncludeTax;
+                // grossDue = TỔNG phải trả của đơn (sau giảm giá), KHÔNG trừ payment đã thu.
+                //  - lbCart_Total  -> luôn hiển thị grossDue (tổng đơn) — không đổi theo payment.
+                //  - lbCart_AmtDue -> phần CÒN LẠI phải thu (grossDue - đã trả).
+                // Trước đây lbCart_Total bị ghi đè thành "remaining"; vì complete-check /
+                // SaveCartPayment / orderTotal đều đọc lbCart_Total như GROSS nên khi mở lại đơn
+                // đã có payment (paymentList nạp sẵn) sẽ đọc nhầm remaining -> sai tiền (mất/dư).
+                double grossDue = Math.Round(total, 2);
 
-                double total_pay_amount = CartHelper.GetPaymentTotal(this.paymentList);
-                total = Math.Round((total - total_pay_amount), 2);
-                
-                if (total > 0)
+                lbCart_SubTotal.Text = "$" + subTotal;  lbCart_ItemSold.Text = itemSold.ToString();
+                lbCart_Total.Text = "$" + grossDue;
+
+                double total_pay_amount = TotalPaidSoFar();  // gồm phần server đã thu (combine) + payment phiên này
+                double remaining = Math.Round(grossDue - total_pay_amount, 2);
+
+                lbCart_Paided.Text = "$" + total_pay_amount;
+                if (remaining > 0)
                 {
-                    lbCart_Total.Text = "$" + total;
-                    lbCart_Paided.Text = "$" + total_pay_amount;
-                    lbCart_AmtDue.Text = "$" + total;  // total đã trừ total_pay_amount ở trên — không trừ lần 2
+                    lbCart_AmtDue.Text = "$" + remaining;
                     this.CartEnableControl();
                 }
                 else
@@ -730,7 +749,11 @@ namespace NailsChekin
                 //    }
                 //}
 
-                CartHelper.UpdateCartInfoSignalR(this.Get_JCart_Current());
+                // Đồng bộ cart sang app Check-In là 1 HTTP call ra server (timeout mặc định 100s).
+                // Build JSON trên UI thread (đọc controls) rồi đẩy network call xuống background
+                // -> không block UI. Trước đây gọi sync ngay đây nên bấm Confirm bị treo lâu khi mạng/server chậm.
+                string jcartSync = this.Get_JCart_Current();
+                Task.Run(() => CartHelper.UpdateCartInfoSignalR(jcartSync));
             }
             catch { }
         }
@@ -1193,7 +1216,7 @@ namespace NailsChekin
         private void ConfirmPaymentCloverNow(bool check_partical = false)
         {
             //Check AMOUNT PAYMENT >= AMOUNT TOTAL
-            double total_payment = CartHelper.GetPaymentTotal(this.paymentList);
+            double total_payment = TotalPaidSoFar();  // server đã thu (combine) + phiên này
             double total_tip_pos = 0;  //Máy credit thu tiền TIP cho từ POS nên phải trừ lại surcharge phần này
             //if (total_tip_pos > 0)
             //{
@@ -1208,7 +1231,9 @@ namespace NailsChekin
             //        total_payment += surcharge_for_tip_paid;
             //    }
             //}
-            double total_amount_request = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
+            // GROSS (tổng đơn) chứ KHÔNG phải AmtDue: khi mở lại đơn, paymentList đã chứa prior
+            // nên total_payment là tích luỹ -> phải so với tổng đơn, không phải remaining (đã trừ prior).
+            double total_amount_request = Utilitys.getTotalAmount(lbCart_Total.Text);
 
             bool repair_mode = false;
             double repair_amount = 0;
@@ -1270,7 +1295,7 @@ namespace NailsChekin
         private void ConfirmPaymentCodePayNow(bool check_partical = false)
         {
             //Check AMOUNT PAYMENT >= AMOUNT TOTAL
-            double total_payment = CartHelper.GetPaymentTotal(this.paymentList);
+            double total_payment = TotalPaidSoFar();  // server đã thu (combine) + phiên này
             double total_tip_pos = 0;  //Máy credit thu tiền TIP cho từ POS nên phải trừ lại surcharge phần này
             //if (total_tip_pos > 0)
             //{
@@ -1286,7 +1311,8 @@ namespace NailsChekin
             //    }
             //}
 
-            double total_amount_request = Utilitys.getTotalAmount(lbCart_AmtDue.Text);  //Đã bao gồm TIP cho bên POS nếu có
+            // GROSS (tổng đơn), không phải AmtDue: paymentList có thể chứa prior (mở lại đơn) -> so tích luỹ với tổng đơn.
+            double total_amount_request = Utilitys.getTotalAmount(lbCart_Total.Text);  //Đã bao gồm TIP cho bên POS nếu có
 
             bool repair_mode = false;
             double repair_amount = 0;
@@ -1366,7 +1392,7 @@ namespace NailsChekin
             return "";
         }
 
-        public void POS_CHECKOUT(string isCreditCard, List<PaymentModel> paymentList, double total_payment, string isSave = "0")
+        public bool POS_CHECKOUT(string isCreditCard, List<PaymentModel> paymentList, double total_payment, string isSave = "0")
         {
             try
             {
@@ -1404,16 +1430,16 @@ namespace NailsChekin
                     }
                 }
 
-                if (numTicket >= 2)
+                if (numTicket >= 2 && !this.selected_ticket_combine)
                 {
                     CustomMessageBox.Show("Please check sale order to Process. no combine order apply");
-                    return;
+                    return false;
                 }
 
                 if (items.Trim().Length <= 0)
                 {
                     CustomMessageBox.Show("Please check item in cart");
-                    return;
+                    return false;
                 }
 
                 items = "[" + items.Substring(0, items.Length - 1) + "]";
@@ -1433,8 +1459,31 @@ namespace NailsChekin
                 this.EnableDisableControl(false);
 
                 string customerId = Utilitys.CheckIsNumber(this.customer_selected) ? this.customer_selected : "0";
-                string order_update_id = Utilitys.CheckIsNumber(this.curent_order_payment_id) ? this.curent_order_payment_id : "0";
-                string DATA = @"{
+
+                string endpoint;
+                string DATA;
+                if (this.selected_ticket_combine)
+                {
+                    // Combine: thanh toán nhiều open sale cùng lúc -> nhánh API riêng (không đụng flow đơn lẻ)
+                    endpoint = "Order/createUpdateOrderCombine";
+                    DATA = @"{
+                                  'combineId': '" + this.selected_ticket_combine_id + @"',
+                                  'orderDate': '" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + @"',
+                                  'customerId': " + customerId + @",
+                                  'methodOfPayment': " + (isCreditCard.Equals("1") ? "1" : "0") + @",
+                                  'cash': " + cash + @",
+                                  'change': " + change + @",
+                                  'charge': " + charge + @",
+                                  'isSave': '" + isSave + @"',
+                                  'items': " + items + @",
+                                  'paymentList': " + jPaymentList + @"
+                                }";
+                }
+                else
+                {
+                    endpoint = "Order/createUpdateOrder";
+                    string order_update_id = Utilitys.CheckIsNumber(this.curent_order_payment_id) ? this.curent_order_payment_id : "0";
+                    DATA = @"{
                                   'id': " + order_update_id + @",
                                   'orderDate': '" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + @"',
                                   'comment': '',
@@ -1464,23 +1513,36 @@ namespace NailsChekin
                                   'paymentList': " + jPaymentList + @",
                                   'orderSource': '" + (string.IsNullOrEmpty(this.orderSource) ? "POS" : this.orderSource) + @"'
                                 }";
+                }
 
-                string responce = Utilitys.CALL_API("Order/createUpdateOrder", DATA, "POST", true);
+                string responce = Utilitys.CALL_API(endpoint, DATA, "POST", true);
                 if (string.IsNullOrEmpty(responce) || responce.ToUpper().StartsWith("ERROR")) //Fail
                 {
                     CustomMessageBox.Show("Process Ticket Error: " + Environment.NewLine + responce);
                     this.EnableDisableControl(true);
+                    return false; // API lỗi -> báo cho caller để rollback tender vừa add (tránh double payment khi bấm lại)
                 }
                 else
                 {
                     string ticketId = responce;
                     if (isSave.Equals("0"))
                     {
+                        bool wasCombine = this.selected_ticket_combine;
+                        string combineIdForPrint = this.selected_ticket_combine_id;
                         this.EnableDisableControl(true);
                         this.ResetAllData();
                         this.paymentList = null;
 
-                        Models.Helper.PrinterLocalHelper.PrintDirectTicket(ticketId, "");
+                        if (wasCombine)
+                        {
+                            // combine: in 1 receipt TỔNG (gộp item + tiền + change), không in từng đơn
+                            string combineJson = Models.MainReport.CombineReceipt_PrinterData(combineIdForPrint, cash, charge, change);
+                            Models.Helper.PrinterLocalHelper.PrintDirectTicket("COMBINE", combineJson);
+                        }
+                        else
+                        {
+                            Models.Helper.PrinterLocalHelper.PrintDirectTicket(ticketId, "");
+                        }
                     }
                     else if (isSave.Equals("1")) //OPEN TICKET
                     {
@@ -1493,6 +1555,8 @@ namespace NailsChekin
                         this.Activate();
                         this.Focus();
                     }));
+
+                    return true;
                 }
             }
             catch (Exception ex)
@@ -1501,130 +1565,9 @@ namespace NailsChekin
                 Utilitys.SaveLOG_Payment(ex.ToString(), "Process Ticket Error");
                 CustomMessageBox.Show("Process Ticket Error: " + ex.Message);
                 this.EnableDisableControl(true);
+                return false; // Exception (timeout/mất kết nối...) -> rollback tender vừa add
             }
         }
-
-        //public Cart POS_GetCart()
-        //{
-        //    try
-        //    {
-        //        Cart cart = new Cart();
-
-        //        double pay_amount = 0;
-
-        //        string couponCode = txtCouponCode.Text;
-        //        string coupon_discountPrice = txtTotalCoupon.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalCoupon.Text.Trim()).ToString();
-
-        //        string gift_card_no = txtGiftCardCode.Text;
-        //        string giftcard_value = txtGiftCardAmount.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtGiftCardAmount.Text).ToString();
-
-        //        string voucher_code = txtVoucherCode.Text;
-        //        string voucher_amount = txtTotalReedemVoucher.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalReedemVoucher.Text.Trim()).ToString();
-
-        //        string total_reward = txtRewardBalance.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtRewardBalance.Text).ToString();
-        //        string total_redeem = txtTotalReedem.Text.Length <= 0 ? "0" : Utilitys.getTotalAmount(txtTotalReedem.Text).ToString();
-
-        //        string cusId = "0";
-        //        string cusName = "GUEST";
-        //        string cusPhone = "0";
-        //        foreach (UCCustomerDrapHere control in panelItemDrapHere.Controls.OfType<UCCustomerDrapHere>())
-        //        {
-        //            cusId = control.id;
-        //            cusName = control.name;
-        //            cusPhone = control.phone;
-        //        }
-
-        //        string appointmentId = this.appoiment_waiting_id;
-        //        string total_paying = pay_amount.ToString();
-        //        string order_discount = txtDiscountPercent.Text.Trim().Length <= 0 ? "0" : txtDiscountPercent.Text.Trim();
-        //        string order_discount_fix = txtDiscountFixAmount.Text.Trim().Length <= 0 ? "0" : txtDiscountFixAmount.Text.Trim();
-        //        string paid_by = "Cash";
-
-        //        string tax_include = chkIncludeTax.Checked ? "1" : "0";
-        //        double total_discount = Utilitys.getTotalAmount(txtTotalDiscount.Text);
-        //        double subTotal = Utilitys.getTotalAmount(txtSubTotal.Text);
-        //        double subTotalInludeTax = Utilitys.getTotalAmount(txtSubTotal_TAX.Text);
-        //        string tax_amount = (subTotalInludeTax - subTotal) < 0 ? "0" :Math.Round(subTotalInludeTax - subTotal, 2).ToString();
-        //        double final_amount = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
-
-        //        total_discount = Math.Round(total_discount, 2);
-        //        subTotal = Math.Round(subTotal, 2);
-        //        subTotalInludeTax = Math.Round(subTotalInludeTax, 2);
-        //        final_amount = Math.Round(final_amount, 2);
-
-        //        //string confirm_deposit = "YES";
-        //        //appt_deposit_id = this.appt_deposit_id;
-        //        //appt_deposit_amount = this.appt_deposit_amount;
-
-        //        //if (this.total_promotion_discount == null)
-        //        //    this.total_promotion_discount = 0;
-        //        if (this.promotion_json.Trim().Length <= 0)
-        //            this.promotion_json = "[]";
-
-        //        string isServiceNow = "0";
-
-        //        List<CartItem> listItem = Cart.GetListItem(myCartTouchScrollPanel.Content);
-
-        //        cart.pay_amount = pay_amount;
-        //        cart.couponCode = couponCode;
-        //        cart.coupon_discountPrice = coupon_discountPrice;
-        //        cart.gift_card_no = gift_card_no;
-        //        cart.giftcard_value = giftcard_value;
-        //        cart.voucher_code = voucher_code;
-        //        cart.voucher_amount = voucher_amount;
-        //        cart.total_reward = total_reward;
-        //        cart.total_redeem = total_redeem;
-        //        cart.cusPhone = cusPhone;
-        //        cart.cusName = cusName;
-        //        cart.cusId = cusId;
-        //        cart.total_paying = total_paying;
-
-        //        cart.order_discount = order_discount;
-        //        cart.order_discount_fix = order_discount_fix;
-        //        cart.total_discount = total_discount.ToString();
-
-        //        cart.tax_include = tax_include;
-        //        cart.tax_percent = tax_percent.ToString();
-
-        //        cart.subTotal = subTotal;
-        //        cart.subTotalInludeTax = subTotalInludeTax;
-        //        cart.tax_amount = tax_amount;
-
-        //        cart.total_promotion_discount = total_promotion_discount;
-        //        cart.appt_deposit_amount = appt_deposit_amount;
-        //        cart.isServiceNow = isServiceNow;
-        //        cart.listItems = listItem;
-
-        //        if (dual_price_percent > 0)
-        //        {
-        //            cart.dual_price_percent = dual_price_percent;
-        //            cart.dual_price_amount = this.dual_price_amount;
-        //        }
-        //        else
-        //        {
-        //            cart.surcharge_credit_percent = surCharge_percent;
-        //            cart.surcharge_credit_amount = this.surcharge_amount;
-        //            cart.surcharge_debit_percent = surCharge_debit_percent;
-        //            cart.surcharge_debit_amount = this.surcharge_debit_amount;
-        //            cart.surcharge_unit = surCharge_unit;
-        //        }
-
-        //        if (cash_discount_percent > 0)
-        //        {
-        //            cart.cash_discount_percent = cash_discount_percent;
-        //            cart.cash_discount_amount = Math.Round(final_amount * cash_discount_percent / 100.0, 2);
-        //        }
-
-        //        cart.cash = final_amount;
-        //        cart.charge = final_amount;
-
-        //        return cart;
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return new Cart();
-        //    }
-        //}
 
         public string current_clover_token = "";
         public string Clover_Payment_Simple(double total_credit_amount, double amount_charge, double pos_tip, string action_type = "TICKET")
@@ -2139,6 +2082,7 @@ namespace NailsChekin
                     this.coupon_code_apply = "";
                     
                     this.total_pending = 0;
+                    this.paidAmount = "0";  // tránh paidAmount stale lẫn sang đơn mới
                     lbCart_AmtDue.Text = "$0.00";
                     lbCart_Tender.Text = "$0.00";
                     lbCart_Paided.Text = "$0.00";
@@ -2342,8 +2286,9 @@ namespace NailsChekin
 
                 paymentList.Add(pm);
 
-                double total_amount = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
-                double total_pay_amount = CartHelper.GetPaymentTotal(this.paymentList);
+                // remaining = GROSS (tổng đơn) - tổng đã trả tới giờ (server đã thu + phiên này).
+                double total_amount = Utilitys.getTotalAmount(lbCart_Total.Text);
+                double total_pay_amount = TotalPaidSoFar();
                 double remaining = Math.Round(total_amount - total_pay_amount, 2);
 
                 lbCart_Tender.Text = "$" + remaining;
@@ -3936,6 +3881,17 @@ namespace NailsChekin
             pay_amount = Math.Round(pay_amount, 2);  //1 số case discount, tax lẻ
             total_amount = Math.Round(total_amount, 2);
 
+            // Chặn tender ÂM: guard ">0" ở trên CỐ Ý miễn cho CASH (để CASH=0 mở/hold đơn được),
+            // nhưng cũng vô tình cho amount < 0 lọt qua. Khi AmtDue âm (đơn trả dư / mở lại đơn đã
+            // thanh toán) thì lbCart_AmtDue_TextChanged tự set Tender = AmtDue âm -> pay_amount âm
+            // -> gửi lên API cash âm (vd -$1). Vẫn cho phép == 0, chỉ chặn < 0.
+            if (pay_amount < 0)
+            {
+                CustomMessageBox.Show("Please Check Payment Amount");
+                this.CartEnableControl();
+                return;
+            }
+
             //Double Click => SAI LOGIC neu payment credit check bi loi nao do
             //CartDisableControl();
 
@@ -3953,26 +3909,39 @@ namespace NailsChekin
             PaymentModel model = new PaymentModel(paid_by, pay_amount, cash_discount, 0, Utilitys.getTotalAmount(lbCart_Tender.Text), Utilitys.getTotalAmount(lbCart_AmtDue.Text), 0, pincode);
             this.paymentList.Add(model);
 
-            double total_pay_amount = CartHelper.GetPaymentTotal(this.paymentList);
+            double total_pay_amount = TotalPaidSoFar();  // server đã thu (combine) + payment phiên này
             double total_cash_discount = 0; // CartHelper.GetPaymentTotal_CashDiscount(this.paymentList);
 
+            bool ok;
             if ((Math.Round(total_pay_amount + total_cash_discount, 2) + 0.5) >= total_amount) // >= số tiền cần thanh toán thì tự complete ticket ( lẻ ít cũng tính là DONE )
             {
-                this.POS_CHECKOUT("0", this.paymentList, pay_amount);
+                ok = this.POS_CHECKOUT("0", this.paymentList, pay_amount);
             }
             else
             {
-                SaveCartPayment();
+                ok = SaveCartPayment();
+            }
+
+            // API lỗi (mất kết nối / timeout / server trả ERROR...) -> gỡ tender vừa add ra khỏi paymentList.
+            // Nếu không, bấm CASH lại sẽ add thêm 1 dòng nữa -> double payment.
+            // Lưu ý: nhánh CHARGE (credit) đã return ở trên (tiền quẹt ở terminal trước khi gọi POS_CHECKOUT)
+            // nên không bị rollback nhầm ở đây.
+            if (!ok && this.paymentList != null)
+            {
+                this.paymentList.Remove(model);
+                this.UpdatePaymentCartAmount();
             }
         }
 
-        private void SaveCartPayment()
+        private bool SaveCartPayment()
         {
+            bool ok = false;
             RunOnUi(() =>
             {
-                double total_amount = Utilitys.getTotalAmount(lbCart_Total.Text);
-                double total_paid = CartHelper.GetPaymentTotal(this.paymentList);
+                double total_amount = Utilitys.getTotalAmount(lbCart_Total.Text);   // GROSS (tổng đơn)
+                double total_paid = TotalPaidSoFar();                               // server đã thu (combine) + phiên này
                 double tender = Math.Round((total_amount - total_paid), 2);
+                if (tender < 0) tender = 0; // không bao giờ "còn nợ" số âm; tránh AmtDue âm -> Tender âm -> CASH âm
 
                 lbCart_Paided.Text = "$" + total_paid;
                 lbCart_AmtDue.Text = "$" + tender;
@@ -3981,9 +3950,17 @@ namespace NailsChekin
 
                 //POS_CHECKOUT đọc control UI (cart items, label...) nên phải chạy trên UI thread.
                 //Trước đây gọi trong Task.Run -> truy cập control cross-thread, gây lỗi chập chờn.
-                this.POS_CHECKOUT(this.selected_ticket, this.paymentList, 0, "1");
+                ok = this.POS_CHECKOUT(this.selected_ticket, this.paymentList, 0, "1");
+                if (ok && this.selected_ticket_combine && this.paymentList != null)
+                {
+                    // Combine ACCUMULATE: phần vừa gửi đã được server cộng dồn -> dồn vào paidAmount và xoá
+                    // khỏi paymentList để lần thu tiếp theo chỉ gửi DELTA mới (gửi lại sẽ bị cộng dồn lần 2).
+                    this.paidAmount = (Utilitys.getTotalAmount(this.paidAmount) + CartHelper.GetPaymentTotal(this.paymentList)).ToString();
+                    this.paymentList.Clear();
+                }
                 this.CartEnableControl();
             });
+            return ok;
         }
 
         private void btnPaymentCard_Cancel_Click(object sender, EventArgs e)
@@ -4511,10 +4488,31 @@ namespace NailsChekin
 
         public string paidAmount = "0";
         public string orderSource = "";
-        public void AddSaleItemToCard(string orderId, string responce, string paidAmount, string orderSource)
+        public void AddSaleItemToCard(string orderId, string responce, string paidAmount, string orderSource, List<PaymentModel> priorPayments = null)
         {
-            this.paidAmount = paidAmount; lbCart_Paided.Text = "$" + paidAmount; 
+            this.paidAmount = paidAmount; lbCart_Paided.Text = "$" + paidAmount;
             this.orderSource = orderSource;
+
+            // Đơn lẻ (không phải combine): tắt cờ combine để TotalPaidSoFar() không cộng nhầm paidAmount
+            // (đơn lẻ prior đã nằm trong paymentList rồi).
+            this.selected_ticket_combine = false;
+            this.selected_ticket_combine_id = "";
+
+            // Mở lại đơn để thu tiếp: nạp payment ĐÃ THU vào paymentList để khi complete gửi lại
+            // ĐỦ list (server REPLACE). Chỉ tin list khi tổng khớp paidAmount; lệch/không có -> fallback
+            // rỗng (giữ hành vi cũ) và cảnh báo nếu đơn đã thu 1 phần (tránh ghi đè mất payment cũ).
+            double paid_already = Utilitys.getTotalAmount(paidAmount);
+            if (priorPayments != null && Math.Abs(CartHelper.GetPaymentTotal(priorPayments) - paid_already) < 0.01)
+            {
+                this.paymentList = priorPayments;
+            }
+            else
+            {
+                this.paymentList = new List<PaymentModel>();
+                if (paid_already > 0)
+                    CustomMessageBox.Show("Không tải được lịch sử thanh toán của đơn (#" + orderId + ", đã thu $" + paid_already + ")." + Environment.NewLine +
+                                          "Kiểm tra kỹ trước khi thu tiếp để tránh ghi đè mất payment đã thu.");
+            }
 
             JArray jArray = JArray.Parse(responce);
             if (jArray.Count <= 0) return;
@@ -4553,6 +4551,74 @@ namespace NailsChekin
 
             this.UpdatePaymentCartAmount();
             SyncStartScanPanel();
+        }
+
+        // Nạp item của TẤT CẢ đơn trong 1 combine vào cart để thanh toán theo nhóm (mỗi item giữ cart_order_id gốc).
+        // members: (id, source) — POS / WEB, vì id 2 bảng có thể trùng nên cần source để load đúng.
+        public async void LoadCombineToCart(string combineId, List<(string id, string source)> members)
+        {
+            this.selected_ticket_combine = true;
+            this.selected_ticket_combine_id = combineId;
+            this.curent_order_payment_id = "0";        // combine gồm nhiều order, không dùng 1 id
+            this.curent_order_local_payment_id = "0";
+            this.orderSource = "POS";
+
+            var content = panelCartItemsTouch.Content;
+            var oldControls = content.Controls.OfType<UCCartItem>().ToList();
+            content.Controls.Clear();
+            foreach (var old in oldControls) { old.MyDispose(); old.Dispose(); }
+
+            double totalPaid = 0;
+            var controls = new List<UCCartItem>();
+            int itemWidth = panelCartItemsTouch.Width - 5;
+            int locationY = 5;
+
+            foreach (var member in members)
+            {
+                string oid = member.id;
+                string responce = await Task.Run(() => Utilitys.CALL_API("Order/" + oid + "?source=" + member.source, "", "GET", true));
+                if (this.IsDisposed) return;
+                if (string.IsNullOrEmpty(responce) || responce.StartsWith("Error")) continue;
+
+                JObject jObj;
+                try { jObj = JObject.Parse(responce); } catch { continue; }
+
+                double.TryParse(jObj["paidAmount"]?.ToString() ?? "0", out double paid);
+                totalPaid += paid;
+
+                JArray jArray;
+                try { jArray = JArray.Parse(jObj["items"]?.ToString() ?? "[]"); } catch { continue; }
+                foreach (JObject obj in jArray)
+                {
+                    var cardItem = new UCCartItem(this,
+                        obj["itemId"].ToString(), obj["itemName"].ToString(),
+                        obj["price"].ToString(), obj["qty"].ToString(),
+                        "0", "0", "");
+                    cardItem.cart_order_id = obj["orderId"].ToString();   // giữ order gốc cho từng item
+                    cardItem.Width = itemWidth;
+                    cardItem.Location = new Point(5, locationY);
+                    locationY += cardItem.Height + 5;
+                    controls.Add(cardItem);
+                }
+            }
+
+            this.paidAmount = totalPaid.ToString();
+            lbCart_Paided.Text = "$" + totalPaid;
+
+            // Combine: server CỘNG DỒN delta mới (createUpdateOrderCombine phân bổ payAmount MỚI vào balance
+            // từng member) -> POS chỉ gửi NEW. KHÔNG nạp prior vào paymentList (sẽ làm payAmount phồng -> trả
+            // partial bị đánh dấu paid nhầm). Phần đã thu (totalPaid -> this.paidAmount) chỉ dùng reconcile
+            // HIỂN THỊ/remaining qua TotalPaidSoFar(). (Khác đơn lẻ REPLACE phải nạp prior.)
+            this.paymentList = new List<PaymentModel>();
+
+            content.SuspendLayout();
+            try { content.Controls.AddRange(controls.ToArray()); }
+            finally { content.ResumeLayout(); }
+
+            this.UpdatePaymentCartAmount();
+            SyncStartScanPanel();
+
+            tabContent.SelectedPage = tabHome;   // chuyển sang màn thanh toán
         }
 
         public void AddCustomerToCard(string responce)

@@ -17,6 +17,9 @@ namespace NailsChekin.UserControl
         public string order_status = "";
         public string payment_status = "";
         public bool selected = false;
+        public string combine_id = "";   // nhóm combine open sale; "" = đơn lẻ
+        public double cash_amount = 0;    // dùng để cộng tổng khi in lại receipt combine
+        public double charge_amount = 0;
 
         public UCSaleItem()
         {
@@ -42,6 +45,8 @@ namespace NailsChekin.UserControl
             this.status = status;
             this.phone = phone;
             this.amount = amount;
+            this.cash_amount = Utilitys.getTotalAmount(cash);
+            this.charge_amount = Utilitys.getTotalAmount(charge);
 
             Models.Helper.UIHelper.StyleSelectCheckbox(chkSelected);
 
@@ -82,6 +87,15 @@ namespace NailsChekin.UserControl
             }
         }
 
+        // Đánh dấu đơn thuộc combine (tô màu nền). Thanh toán sẽ theo nhóm, không trả lẻ.
+        public void SetCombineId(string combineId)
+        {
+            this.combine_id = combineId ?? "";
+            // Tô màu cho cả màn hình SALE OPEN lẫn SALE LIST (lịch sử) để nhận biết đơn thuộc combine
+            if (!string.IsNullOrEmpty(this.combine_id))
+                tbHeader.BackColor = System.Drawing.Color.FromArgb(255, 244, 214); // vàng nhạt = thuộc combine
+        }
+
         private void svgPaymentNow_Click(object sender, EventArgs e)
         {
             // Màn hình lịch sử: svgPaymentNow đóng vai trò nút Refund (Tag = "REFUND")
@@ -91,18 +105,41 @@ namespace NailsChekin.UserControl
                 return;
             }
 
-            // Màn hình SALE OPEN: thanh toán đơn chưa trả
+            // Màn hình SALE OPEN
             if (!this.status.Equals("0"))
             {
                 MessageBox.Show("Order Status Incorrect !!!");
                 return;
             }
 
-            Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.SaleOpen_Payment(this.id);
+            var formSale = Models.Helper.UIHelper.GetParentForm<FormSaleList>(this);
+            if (!string.IsNullOrEmpty(this.combine_id))
+                formSale?.PayCombine(this.combine_id);   // đơn trong combine -> trả theo nhóm
+            else
+                formSale?.SaleOpen_Payment(this.id);     // đơn lẻ
         }
 
         private void svgPrinter_Click(object sender, EventArgs e)
         {
+            // Đơn thuộc combine -> hỏi in receipt tổng (combine) hay receipt lẻ của riêng đơn này
+            if (!string.IsNullOrEmpty(this.combine_id))
+            {
+                var ans = CustomMessageBox.Show(
+                    "This order belongs to a combined ticket." + Environment.NewLine + Environment.NewLine +
+                    "[Yes]  = Print the COMBINED receipt" + Environment.NewLine +
+                    "[No]   = Print only THIS receipt",
+                    "Print Combine", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+
+                if (ans == DialogResult.Cancel) return;
+                if (ans == DialogResult.Yes)
+                {
+                    Models.Helper.UIHelper.GetParentForm<FormSaleList>(this)?.PrintCombine(this.combine_id);
+                    return;
+                }
+                // ans == No -> in receipt lẻ bình thường (rơi xuống dưới)
+            }
+
+            // Trạng thái (Returned/Paid...) do SQL ftTikectPrinter trả về theo orderStatus
             Models.Helper.PrinterLocalHelper.PrintDirectTicket(this.id, "");
         }
 

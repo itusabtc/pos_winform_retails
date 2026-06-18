@@ -696,7 +696,8 @@ namespace NailsChekin.Models.Payments
                     }
 
                     string response_code = jPayment["response_code"] == null ? "0" : jPayment["response_code"].ToString();
-                    if (!(response_code.Equals("200") || response_code.Equals("0")))
+                    string topic = jPayment["topic"] == null ? "" : jPayment["topic"].ToString();
+                    if (!(response_code.Equals("200") || response_code.Equals("0")) || topic.Equals("ecrhub.pay.close") )
                     {
                         if (!string.IsNullOrEmpty(merchant_order_no))  //Hủy job query order
                             CancelP5PaymentStatusJob(merchant_order_no);
