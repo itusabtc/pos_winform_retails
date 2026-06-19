@@ -22,6 +22,7 @@ namespace NailsChekin.Popup
         private string _paymentId = "";       // Clover: externalPaymentId | CodePay: trans_no
         private string _cloverOrderId = "";   // Clover: order id | CodePay: merchant_order_no
         private bool _isCredit = false;       // đơn thanh toán thẻ?
+        private double _taxRate = 0;          // tax / subtotal của đơn -> phân bổ thuế khi hoàn
 
         // True khi đã refund thành công ít nhất 1 item -> parent reload lại list khi đóng
         public bool refunded = false;
@@ -84,9 +85,14 @@ namespace NailsChekin.Popup
             _paymentId = Str(Get(obj, "paymentId"));
             _cloverOrderId = Str(Get(obj, "cloverOrderId"));
             int methodOfPayment = (int)Num(Get(obj, "methodOfPayment"));
-            _isCredit = methodOfPayment == 1
-                || !string.IsNullOrEmpty(_paymentId)
-                || !string.IsNullOrEmpty(_cloverOrderId);
+            // CHỈ coi là đơn THẺ khi methodOfPayment = 1 (API set = 1 khi đơn có lịch sử thanh toán 'CC').
+            // KHÔNG dựa vào paymentId/cloverOrderId: đơn tiền mặt vẫn có transaction_no/transaction_id
+            // (cloverOrderId = orderId) khác rỗng -> nếu dùng sẽ nhầm là đơn thẻ và gọi hoàn tiền qua máy.
+            _isCredit = methodOfPayment == 1;
+
+            // Tổng thuế của đơn -> phân bổ cho từng item theo tỉ lệ subtotal.
+            // _taxRate = tax / (tổng line subtotal) được tính SAU vòng lặp item để mẫu số chính xác.
+            double orderTax = Num(Get(obj, "tax"));
 
             string date = Str(Get(obj, "orderDate"));
             lbDate.Text = "Date: " + (DateTime.TryParse(date, out DateTime dt) ? dt.ToString("MM/dd/yyyy h:mm tt") : date);
@@ -113,6 +119,7 @@ namespace NailsChekin.Popup
             JArray items = Get(obj, "items") as JArray ?? new JArray();
             int itemWidth = panelCartItemsTouch.Width - 5;
             int locationY = 0;
+            double sumItemSub = 0;   // tổng line subtotal (pre-tax) -> mẫu số tính _taxRate
             var rows = new List<UCSaleItemRefund>();
             foreach (JToken tok in items)
             {
@@ -127,12 +134,17 @@ namespace NailsChekin.Popup
                 double sub = Num(Get(it, "subTotal", "subtotal"));
                 bool isRefunded = (int)Num(Get(it, "refunded")) == 1;
 
+                sumItemSub += sub;
+
                 var row = new UCSaleItemRefund(this, itemId, itemName, price, qty, discount, sub, isRefunded);
                 row.Width = itemWidth;
                 row.Location = new Point(0, locationY);
                 locationY += row.Height + 2;
                 rows.Add(row);
             }
+
+            // Tỉ lệ thuế hiệu dụng của đơn = tax / tổng tiền hàng (pre-tax)
+            _taxRate = sumItemSub > 0 ? (orderTax / sumItemSub) : 0;
 
             content.SuspendLayout();
             try { content.Controls.AddRange(rows.ToArray()); }
@@ -158,8 +170,9 @@ namespace NailsChekin.Popup
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            double totalRefund = panelCartItemsTouch.Content.Controls.OfType<UCSaleItemRefund>()
-                .Where(r => !r.already_refunded).Sum(r => r.amount);
+            var refundRows = panelCartItemsTouch.Content.Controls.OfType<UCSaleItemRefund>()
+                .Where(r => !r.already_refunded).ToList();
+            double totalRefund = refundRows.Sum(r => RefundAmountWithTax(r));
 
             SetBusy(true);
 
@@ -168,9 +181,16 @@ namespace NailsChekin.Popup
             if (this.IsDisposed) return;
             if (refundTransNo == null) { await LoadOrder(); return; }
 
-            // 2) Ghi nhận refund toàn bộ order (itemId rỗng), kèm số GD hoàn của máy
-            string res = await Task.Run(() => Utilitys.CALL_API("Order/refund", BuildRefundJson("", "", 0, refundTransNo), "POST", true));
-            if (this.IsDisposed) return;
+            // 2) Ghi nhận refund từng item kèm thuế (refund_amount đã gồm tax), số GD hoàn của máy
+            string res = "OK";
+            foreach (var row in refundRows)
+            {
+                string DATA = BuildRefundJson(row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
+                res = await Task.Run(() => Utilitys.CALL_API("Order/refund", DATA, "POST", true));
+                if (this.IsDisposed) return;
+                if (IsApiError(res)) break;
+                refunded = true;
+            }
 
             if (IsApiError(res))
             {
@@ -179,8 +199,7 @@ namespace NailsChekin.Popup
                 return;
             }
 
-            refunded = true;
-            PrintRefundReceipt();
+            PrintRefundReceipt(refundRows);
             CustomMessageBox.Show("Refund successful !!!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }
@@ -226,20 +245,20 @@ namespace NailsChekin.Popup
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            double totalRefund = rows.Sum(r => r.amount);
+            double totalRefund = rows.Sum(r => RefundAmountWithTax(r));
 
             SetBusy(true);
 
-            // 1) Hoàn tiền qua máy 1 lần cho tổng item đã chọn
+            // 1) Hoàn tiền qua máy 1 lần cho tổng item đã chọn (đã gồm thuế)
             string refundTransNo = await RefundOnDevice(totalRefund);
             if (this.IsDisposed) return;
             if (refundTransNo == null) { await LoadOrder(); return; }
 
-            // 2) Ghi nhận từng item, kèm số GD hoàn của máy
+            // 2) Ghi nhận từng item kèm thuế (refund_amount đã gồm tax), số GD hoàn của máy
             string res = "OK";
             foreach (var row in rows)
             {
-                string DATA = BuildRefundJson(row.item_id, row.item_name, row.amount, refundTransNo);
+                string DATA = BuildRefundJson(row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
                 res = await Task.Run(() => Utilitys.CALL_API("Order/refund", DATA, "POST", true));
                 if (this.IsDisposed) return;
 
@@ -254,7 +273,7 @@ namespace NailsChekin.Popup
                 return;
             }
 
-            PrintRefundReceipt();
+            PrintRefundReceipt(rows);
             CustomMessageBox.Show("Refund successful !!!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             // Reload để cập nhật trạng thái item; nếu đã refund hết -> đóng
@@ -263,13 +282,55 @@ namespace NailsChekin.Popup
                 this.Close();
         }
 
-        // In lại receipt của order sau khi refund: dùng chung template Sale/Combine.
-        // Trạng thái RETURNED do SQL ftTikectPrinter trả về (orderStatus = 3); PrintDirectTicket tự kèm chữ ký nếu là đơn thẻ.
-        private void PrintRefundReceipt()
+        // In receipt refund: CHỈ gồm các item vừa hoàn + số ticket #, kèm tổng tiền hoàn.
+        // Lấy storeInfo/ticketInfo/footerInfo từ printData rồi thay items + totals (không in cả đơn).
+        private void PrintRefundReceipt(List<UCSaleItemRefund> refundedRows)
         {
             try
             {
-                PrinterLocalHelper.PrintDirectTicket(_orderId, "");
+                if (refundedRows == null || refundedRows.Count == 0) return;
+
+                string json = MainReport.Receipt_PrinterData(_orderId);
+                if (string.IsNullOrEmpty(json) || !Utilitys.IsValidJson(json)) return;
+
+                JObject jData = JObject.Parse(json);
+
+                // Chỉ giữ các item đã hoàn (format số giống ftPrintValue: bỏ số 0 thừa)
+                var items = new JArray();
+                double refundSubtotal = 0;   // tiền hàng (pre-tax)
+                double refundTotal = 0;      // tiền hoàn đã gồm thuế
+                foreach (var r in refundedRows)
+                {
+                    refundSubtotal += r.amount;
+                    refundTotal += RefundAmountWithTax(r);
+                    items.Add(new JObject
+                    {
+                        ["item"]   = r.item_name,
+                        ["qty"]    = r.quantity.ToString("0.##", CultureInfo.InvariantCulture),
+                        ["price"]  = r.price.ToString("0.##", CultureInfo.InvariantCulture),
+                        ["amount"] = r.amount.ToString("0.##", CultureInfo.InvariantCulture)
+                    });
+                }
+                jData["items"] = items;
+
+                // Totals: SUBTOTAL + TAX + TOTAL (đã gồm thuế); ẩn CASH/CHANGE của đơn gốc
+                double refundTax = Math.Round(refundTotal - refundSubtotal, 2);
+                jData["totals"] = new JObject
+                {
+                    ["SUBTOTAL"] = refundSubtotal.ToString("0.##", CultureInfo.InvariantCulture),
+                    ["DISCOUNT"] = "",
+                    ["REWARD"]   = "",
+                    ["TAX"]      = refundTax > 0 ? refundTax.ToString("0.##", CultureInfo.InvariantCulture) : "",
+                    ["TOTAL"]    = refundTotal.ToString("0.##", CultureInfo.InvariantCulture),
+                    ["CASH"]     = "",
+                    ["CHARGE"]   = "",
+                    ["CHANGED"]  = ""
+                };
+
+                // Receipt refund in dạng thường, không kèm chữ ký của đơn gốc
+                jData["payment_info"] = new JObject();
+
+                PrinterLocalHelper.PrintDirectTicket(_orderId, jData.ToString());
             }
             catch { /* lỗi in không được chặn flow refund */ }
         }
@@ -277,6 +338,12 @@ namespace NailsChekin.Popup
         private void btnClose_Click(object sender, EventArgs e)
         {
             this.Close();
+        }
+
+        // Số tiền hoàn của 1 item = tiền hàng + thuế phân bổ (tax theo tỉ lệ trên subtotal đơn).
+        private double RefundAmountWithTax(UCSaleItemRefund r)
+        {
+            return Math.Round(r.amount * (1 + _taxRate), 2);
         }
 
         private string BuildRefundJson(string itemId, string itemName, double amount, string transactionId)

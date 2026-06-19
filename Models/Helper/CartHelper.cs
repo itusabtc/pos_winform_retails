@@ -430,7 +430,7 @@ namespace NailsChekin.Models.Helper
                 if (pm == null) continue;
 
                 if (!"CC".Equals(pm.type))  //Khác credit đưa vào Cash trước
-                    total += pm.amount;
+                    total += ( pm.cash_received <= 0 ? pm.amount : pm.cash_received );
             }
             return Math.Round(total, 2);
         }

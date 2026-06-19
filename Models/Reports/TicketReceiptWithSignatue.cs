@@ -63,33 +63,9 @@ namespace NailsChekin.Models.Reports
 
                 ticketIdLable.Text = "*******************************" + Environment.NewLine + "#" + this.orderId + Environment.NewLine + "*******************************";
 
-                int count = 1;
-                int number_items = 0;
-                int stt = 0;
-                foreach (JObject obj in items)
-                {
-                    string item = obj["item"].ToString();
-                    string qty = obj["qty"].ToString();
-                    string price = obj["price"].ToString();
-                    string amount = obj["amount"].ToString();
-                    number_items += (int)Math.Round(double.Parse(qty), 0);
-
-                    if (stt == 0)
-                    {
-                        detailTable.Rows[0].Cells["qty"].Text = qty.ToString() + " @ " + price;
-                        detailTable.Rows[0].Cells["service"].Text = item;
-                        detailTable.Rows[0].Cells["total"].Text = "$" + amount;
-                    }
-                    else
-                    {
-                        detailTable.InsertRowBelow(null);
-                        detailTable.Rows[stt].Cells[0].Text = qty.ToString() + " @ " + price;
-                        detailTable.Rows[stt].Cells[1].Text = item;
-                        detailTable.Rows[stt].Cells[2].Text = "$" + amount;
-                    }
-
-                    stt++;
-                }
+                // Item đã refund -> tô đỏ + amount có dấu '-' (dùng chung cho receipt thường & return)
+                double refundedTotal;
+                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedTotal);
 
                 total_service_lable.Text = number_items.ToString();
 
@@ -109,6 +85,9 @@ namespace NailsChekin.Models.Reports
 
                 total_title.Text = t_title;
                 total_lable.Text = t_text;
+
+                // Dòng tổng tiền đã hoàn (đỏ) ngay dưới các ô tiền
+                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedTotal);
 
                 total_you_earn_points_today.Text = "You Earn " + youEarn + " points today";
                 total_items_sold.Text = "Items Sold: " + number_items;

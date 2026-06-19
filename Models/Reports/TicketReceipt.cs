@@ -61,33 +61,9 @@ namespace NailsChekin.Models.Reports
 
                 ticketIdLable.Text = "*******************************" + Environment.NewLine + "#" + this.orderId + Environment.NewLine + "*******************************";
 
-                int count = 1;
-                int number_items = 0;
-                int stt = 0;
-                foreach (JObject obj in items)
-                {
-                    string item = obj["item"].ToString();
-                    string qty = obj["qty"].ToString();
-                    string price = obj["price"].ToString();
-                    string amount = obj["amount"].ToString();
-                    number_items += int.Parse(qty);
-
-                    if (stt == 0)
-                    {
-                        detailTable.Rows[0].Cells["qty"].Text = qty.ToString() + " @ " + price;
-                        detailTable.Rows[0].Cells["service"].Text = item;
-                        detailTable.Rows[0].Cells["total"].Text = "$" + amount;
-                    }
-                    else
-                    {
-                        detailTable.InsertRowBelow(null);
-                        detailTable.Rows[stt].Cells[0].Text = qty.ToString() + " @ " + price;
-                        detailTable.Rows[stt].Cells[1].Text = item;
-                        detailTable.Rows[stt].Cells[2].Text = "$" + amount;
-                    }
-
-                    stt++;
-                }
+                // Item đã refund -> tô đỏ + amount có dấu '-' (dùng chung cho receipt thường & return)
+                double refundedTotal;
+                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedTotal);
 
                 total_service_lable.Text = number_items.ToString();
 
@@ -107,6 +83,9 @@ namespace NailsChekin.Models.Reports
 
                 total_title.Text = t_title;
                 total_lable.Text = t_text;
+
+                // Dòng tổng tiền đã hoàn (đỏ) ngay dưới các ô tiền
+                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedTotal);
 
                 total_you_earn_points_today.Text = "You Earn " + youEarn + " points today";
                 total_items_sold.Text = "Items Sold: " + number_items;
@@ -145,5 +124,95 @@ namespace NailsChekin.Models.Reports
             }
         }
 
+    }
+
+    // Đổ danh sách item vào bảng chi tiết của receipt.
+    // Item có "refunded":1 -> tô màu ĐỎ cả dòng + amount hiện dấu '-' (receipt RETURN khi in lại đơn đã hoàn).
+    // Item không có cờ refunded (vd receipt bán hàng / receipt lúc refund) -> in bình thường.
+    // Tách riêng để dễ nâng cấp mẫu Receipt Return sau này.
+    internal static class ReceiptRenderHelper
+    {
+        // Đổ item vào bảng chi tiết. Trả về tổng số lượng; out refundedTotal = tổng tiền các item đã hoàn (gồm thuế).
+        public static int FillItems(XRTable detailTable, JArray items, out double refundedTotal)
+        {
+            refundedTotal = 0;
+            int number_items = 0;
+            int stt = 0;
+            foreach (JObject obj in items)
+            {
+                string item = obj["item"] == null ? "" : obj["item"].ToString();
+                string qty = obj["qty"] == null ? "0" : obj["qty"].ToString();
+                string price = obj["price"] == null ? "" : obj["price"].ToString();
+                string amount = obj["amount"] == null ? "0" : obj["amount"].ToString();
+                bool refunded = obj["refunded"] != null && obj["refunded"].ToString().Trim() == "1";
+
+                double q;
+                if (double.TryParse(qty, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out q))
+                    number_items += (int)Math.Round(q, 0);
+
+                if (refunded)
+                {
+                    // refund_amount đã gồm thuế (lưu lúc refund); fallback dùng line amount nếu chưa có
+                    double ra = 0;
+                    if (obj["refund_amount"] != null)
+                        double.TryParse(obj["refund_amount"].ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out ra);
+                    if (ra <= 0)
+                        double.TryParse(amount, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out ra);
+                    refundedTotal += ra;
+                }
+
+                XRTableRow row;
+                if (stt == 0)
+                {
+                    row = detailTable.Rows[0];
+                }
+                else
+                {
+                    detailTable.InsertRowBelow(null);
+                    row = detailTable.Rows[stt];
+                }
+
+                row.Cells[0].Text = qty + " @ " + price;
+                row.Cells[1].Text = item;
+                row.Cells[2].Text = (refunded ? "-$" : "$") + amount;
+
+                if (refunded)
+                {
+                    row.Cells[0].ForeColor = System.Drawing.Color.Red;
+                    row.Cells[1].ForeColor = System.Drawing.Color.Red;
+                    row.Cells[2].ForeColor = System.Drawing.Color.Red;
+                }
+
+                stt++;
+            }
+            return number_items;
+        }
+
+        // Thêm 1 dòng "TOTAL AMOUNT RETURN" màu đỏ vào dưới bảng totals (chỉ khi có tiền hoàn).
+        public static void AddReturnTotalRow(XRTable totalsTable, double returnTotal)
+        {
+            if (totalsTable == null || returnTotal <= 0) return;
+
+            var row = new XRTableRow();
+            row.Weight = 1D;
+
+            var titleCell = new XRTableCell();
+            titleCell.Text = "TOTAL AMOUNT RETURN";
+            titleCell.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            titleCell.ForeColor = System.Drawing.Color.Red;
+            titleCell.Multiline = true;
+            titleCell.Weight = 1.4093352534058872D;   // khớp total_title
+
+            var valueCell = new XRTableCell();
+            valueCell.Text = "-$" + returnTotal.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            valueCell.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            valueCell.ForeColor = System.Drawing.Color.Red;
+            valueCell.Multiline = true;
+            valueCell.TextAlignment = DevExpress.XtraPrinting.TextAlignment.TopRight;
+            valueCell.Weight = 0.59066474659411283D;  // khớp total_lable
+
+            row.Cells.AddRange(new XRTableCell[] { titleCell, valueCell });
+            totalsTable.Rows.Add(row);
+        }
     }
 }

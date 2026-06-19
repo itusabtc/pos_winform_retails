@@ -55,7 +55,7 @@ namespace NailsChekin.UserControl
                 svgDelete.Visible = false;
 
                 // svgPaymentNow tái sử dụng làm nút Refund: chỉ hiện cho đơn đã thanh toán bằng THẺ (charge > 0)
-                bool showRefund = orderStatusString.Equals("Paid") && Utilitys.getTotalAmount(charge) > 0;
+                bool showRefund = orderStatusString.Equals("Paid"); // && Utilitys.getTotalAmount(charge) > 0;
                 if (showRefund)
                 {
                     svgPaymentNow.SvgImage = GetRefundIcon();
