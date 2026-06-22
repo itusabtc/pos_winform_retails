@@ -164,7 +164,6 @@
             this.txtPrice.TabIndex = 11;
             this.txtPrice.Click += new System.EventHandler(this.txtPrice_Click);
             this.txtPrice.TextChanged += new System.EventHandler(this.txtPrice_TextChanged);
-            this.txtPrice.MouseLeave += new System.EventHandler(this.txtPrice_MouseLeave);
             // 
             // txtProductName
             // 

@@ -181,10 +181,10 @@ namespace NailsChekin.Popup
 
             var lbWaiting = new Label
             {
-                Text = "Searching... Please wait",
+                Text = "Searching... Please wait".ToUpper(),
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 26f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 32f, FontStyle.Bold),
                 ForeColor = Color.Gray,
                 BackColor = Color.Transparent
             };
@@ -495,7 +495,7 @@ namespace NailsChekin.Popup
             btnDeleteSelected.Enabled = true;
             btnDeleteSelected.Text = "DELETE SELECTED";
 
-            if (responce.ToUpper().StartsWith("ERROR"))
+            if (!responce.ToUpper().Equals("OK"))
             {
                 CustomMessageBox.Show("Process Order Error: " + Environment.NewLine + responce);
                 return;

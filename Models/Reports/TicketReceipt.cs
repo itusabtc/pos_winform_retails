@@ -62,8 +62,8 @@ namespace NailsChekin.Models.Reports
                 ticketIdLable.Text = "*******************************" + Environment.NewLine + "#" + this.orderId + Environment.NewLine + "*******************************";
 
                 // Item đã refund -> tô đỏ + amount có dấu '-' (dùng chung cho receipt thường & return)
-                double refundedTotal;
-                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedTotal);
+                double refundedSubtotal;
+                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedSubtotal);
 
                 total_service_lable.Text = number_items.ToString();
 
@@ -85,7 +85,7 @@ namespace NailsChekin.Models.Reports
                 total_lable.Text = t_text;
 
                 // Dòng tổng tiền đã hoàn (đỏ) ngay dưới các ô tiền
-                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedTotal);
+                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedSubtotal, totals);
 
                 total_you_earn_points_today.Text = "You Earn " + youEarn + " points today";
                 total_items_sold.Text = "Items Sold: " + number_items;
@@ -132,12 +132,14 @@ namespace NailsChekin.Models.Reports
     // Tách riêng để dễ nâng cấp mẫu Receipt Return sau này.
     internal static class ReceiptRenderHelper
     {
-        // Đổ item vào bảng chi tiết. Trả về tổng số lượng; out refundedTotal = tổng tiền các item đã hoàn (gồm thuế).
-        public static int FillItems(XRTable detailTable, JArray items, out double refundedTotal)
+        // Đổ item vào bảng chi tiết. Trả về tổng số lượng; out refundedSubtotal = tổng LINE amount (pre-tax) của các item đã hoàn.
+        public static int FillItems(XRTable detailTable, JArray items, out double refundedSubtotal)
         {
-            refundedTotal = 0;
+            refundedSubtotal = 0;
             int number_items = 0;
             int stt = 0;
+            // Màu gốc của dòng item -> dùng để RESET cho dòng không refund (InsertRowBelow clone cả màu đỏ của dòng trước)
+            System.Drawing.Color defaultColor = detailTable.Rows[0].Cells[0].ForeColor;
             foreach (JObject obj in items)
             {
                 string item = obj["item"] == null ? "" : obj["item"].ToString();
@@ -150,16 +152,9 @@ namespace NailsChekin.Models.Reports
                 if (double.TryParse(qty, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out q))
                     number_items += (int)Math.Round(q, 0);
 
+                // Cộng theo LINE amount đang in (không dùng refund_amount vì quick item trùng id/tên dễ bị ghi đè)
                 if (refunded)
-                {
-                    // refund_amount đã gồm thuế (lưu lúc refund); fallback dùng line amount nếu chưa có
-                    double ra = 0;
-                    if (obj["refund_amount"] != null)
-                        double.TryParse(obj["refund_amount"].ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out ra);
-                    if (ra <= 0)
-                        double.TryParse(amount, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out ra);
-                    refundedTotal += ra;
-                }
+                    refundedSubtotal += ParseNum(amount);
 
                 XRTableRow row;
                 if (stt == 0)
@@ -176,22 +171,28 @@ namespace NailsChekin.Models.Reports
                 row.Cells[1].Text = item;
                 row.Cells[2].Text = (refunded ? "-$" : "$") + amount;
 
-                if (refunded)
-                {
-                    row.Cells[0].ForeColor = System.Drawing.Color.Red;
-                    row.Cells[1].ForeColor = System.Drawing.Color.Red;
-                    row.Cells[2].ForeColor = System.Drawing.Color.Red;
-                }
+                // LUÔN set màu (đỏ nếu refunded, ngược lại trả về màu gốc) -> tránh dòng clone bị dính đỏ
+                System.Drawing.Color color = refunded ? System.Drawing.Color.Red : defaultColor;
+                row.Cells[0].ForeColor = color;
+                row.Cells[1].ForeColor = color;
+                row.Cells[2].ForeColor = color;
 
                 stt++;
             }
             return number_items;
         }
 
-        // Thêm 1 dòng "TOTAL AMOUNT RETURN" màu đỏ vào dưới bảng totals (chỉ khi có tiền hoàn).
-        public static void AddReturnTotalRow(XRTable totalsTable, double returnTotal)
+        // Thêm 1 dòng "TOTAL AMOUNT RETURN" màu đỏ dưới bảng totals.
+        // returnTotal = tổng tiền hàng đã hoàn + thuế phân bổ (theo tỉ lệ tax/subtotal của đơn).
+        public static void AddReturnTotalRow(XRTable totalsTable, double refundedSubtotal, JObject totals)
         {
-            if (totalsTable == null || returnTotal <= 0) return;
+            if (totalsTable == null || refundedSubtotal <= 0) return;
+
+            double ordSub = ParseNum(totals != null && totals["SUBTOTAL"] != null ? totals["SUBTOTAL"].ToString() : "");
+            double ordTax = ParseNum(totals != null && totals["TAX"] != null ? totals["TAX"].ToString() : "");
+            double rate = ordSub > 0 ? ordTax / ordSub : 0;
+            double returnTotal = Math.Round(refundedSubtotal * (1 + rate), 2);
+            if (returnTotal <= 0) return;
 
             var row = new XRTableRow();
             row.Weight = 1D;
@@ -213,6 +214,15 @@ namespace NailsChekin.Models.Reports
 
             row.Cells.AddRange(new XRTableCell[] { titleCell, valueCell });
             totalsTable.Rows.Add(row);
+        }
+
+        // Parse chuỗi tiền ("$77", "5.64", "") -> double
+        private static double ParseNum(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return 0;
+            s = s.Replace("$", "").Replace(",", "").Trim();
+            double d;
+            return double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out d) ? d : 0;
         }
     }
 }

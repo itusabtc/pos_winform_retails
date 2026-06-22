@@ -6,6 +6,7 @@ using NailsChekin.Models.Services;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace NailsChekin.Models.Helper
 {
@@ -514,6 +515,40 @@ namespace NailsChekin.Models.Helper
             //đồng bộ qua lại với app checkIn
             string responce = Utilitys.CALL_API("Cart/UpdateCartInfo?paring_code=" + Constants.pairing_code, jData, "POST", true);
             return responce;
+        }
+
+        // ── Gửi cart sync kiểu single-flight + coalescing ──────────────────────────────
+        // Mỗi lúc CHỈ 1 request đang bay; luôn gửi snapshot MỚI NHẤT, tuần tự.
+        // Tránh nhiều Task.Run song song tới server không đúng thứ tự -> cart bị thiếu item
+        // (hay gặp khi thêm/sửa quick item theo cụm). Vẫn không block UI.
+        private static readonly object _cartSyncLock = new object();
+        private static string _pendingCartJson = null;   // snapshot chờ gửi (latest wins)
+        private static bool _cartSyncRunning = false;     // đang có worker chạy?
+
+        public static void UpdateCartInfoSignalRQueued(string jData)
+        {
+            lock (_cartSyncLock)
+            {
+                _pendingCartJson = jData;        // luôn ghi đè bằng snapshot mới nhất
+                if (_cartSyncRunning) return;    // đã có worker -> nó sẽ nuốt snapshot mới
+                _cartSyncRunning = true;
+            }
+
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    string json;
+                    lock (_cartSyncLock)
+                    {
+                        if (_pendingCartJson == null) { _cartSyncRunning = false; return; }
+                        json = _pendingCartJson;
+                        _pendingCartJson = null;
+                    }
+
+                    try { UpdateCartInfoSignalR(json); } catch { /* lỗi mạng -> bỏ qua, lần sau gửi tiếp */ }
+                }
+            });
         }
 
         public static string RemoveCustomerInfoSignalR()

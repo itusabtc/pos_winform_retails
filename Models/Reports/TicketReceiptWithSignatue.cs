@@ -64,8 +64,8 @@ namespace NailsChekin.Models.Reports
                 ticketIdLable.Text = "*******************************" + Environment.NewLine + "#" + this.orderId + Environment.NewLine + "*******************************";
 
                 // Item đã refund -> tô đỏ + amount có dấu '-' (dùng chung cho receipt thường & return)
-                double refundedTotal;
-                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedTotal);
+                double refundedSubtotal;
+                int number_items = ReceiptRenderHelper.FillItems(detailTable, items, out refundedSubtotal);
 
                 total_service_lable.Text = number_items.ToString();
 
@@ -87,7 +87,7 @@ namespace NailsChekin.Models.Reports
                 total_lable.Text = t_text;
 
                 // Dòng tổng tiền đã hoàn (đỏ) ngay dưới các ô tiền
-                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedTotal);
+                ReceiptRenderHelper.AddReturnTotalRow(xrTable2, refundedSubtotal, totals);
 
                 total_you_earn_points_today.Text = "You Earn " + youEarn + " points today";
                 total_items_sold.Text = "Items Sold: " + number_items;

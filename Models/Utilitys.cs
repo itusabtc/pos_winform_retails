@@ -106,9 +106,9 @@ namespace NailsChekin.Models
             return amount;
         }
 
-        public static double getSurcharge(double total_amount, double total_tip)
+        public static double getSurcharge(double total_amount, double total_tip, double non_credit_amount = 0)
         {
-            //Không bao gồm tip
+            //SPLIT KHÔNG THU FEE
 
             bool chkSurChargeOn = Utilitys.GetConfig("chkSurChargeOn", Constants.chkSurChargeOn);
             string surCharge_percent = Utilitys.GetConfig("surCharge_percent", Constants.surCharge_percent);
@@ -118,7 +118,7 @@ namespace NailsChekin.Models
             if (chkSurChargeOn && surCharge_percent.Trim().Length > 0)
             {
                 double min_amount = double.Parse(string.IsNullOrEmpty(surCharge_minAmount) ? "0" : surCharge_minAmount);
-                if (total_amount - total_tip < min_amount) //Nhỏ hơn số tiền mới cộng Fee
+                if ( ((total_amount - total_tip) + non_credit_amount) < min_amount) //Nhỏ hơn số tiền mới cộng Fee
                 {
                     if (surCharge_unit.Equals("%"))
                     {
@@ -140,28 +140,28 @@ namespace NailsChekin.Models
         {
             //SPLIT KHÔNG THU FEE
 
-            //bool chkSurChargeOn = Utilitys.GetConfig("chkSurChargeOn", Constants.chkSurChargeOn);
-            //string surCharge_percent = Utilitys.GetConfig("surCharge_percent", Constants.surCharge_percent);
-            //string surCharge_minAmount = Utilitys.GetConfig("surCharge_minAmount", Constants.surCharge_minAmount);
-            //string surCharge_unit = Utilitys.GetConfig("surCharge_unit", Constants.surCharge_unit);
+            bool chkSurChargeOn = Utilitys.GetConfig("chkSurChargeOn", Constants.chkSurChargeOn);
+            string surCharge_percent = Utilitys.GetConfig("surCharge_percent", Constants.surCharge_percent);
+            string surCharge_minAmount = Utilitys.GetConfig("surCharge_minAmount", Constants.surCharge_minAmount);
+            string surCharge_unit = Utilitys.GetConfig("surCharge_unit", Constants.surCharge_unit);
 
-            //if (chkSurChargeOn && surCharge_percent.Trim().Length > 0)
-            //{
-            //    double min_amount = double.Parse(string.IsNullOrEmpty(surCharge_minAmount) ? "0" : surCharge_minAmount);
-            //    if ( ( (total_amount - total_tip) + custom_split_amount ) < min_amount) //Nhỏ hơn số tiền mới cộng Fee ( tổng tiền chứ không phải tổng credit )
-            //    {
-            //        if (surCharge_unit.Equals("%"))
-            //        {
-            //            double surCharge = (total_amount - total_tip) * (double.Parse(surCharge_percent) / 100.0);
-            //            return Math.Round(surCharge, 2);
-            //        }
-            //        else  //FIX $
-            //        {
-            //            double surCharge = double.Parse(surCharge_percent);
-            //            return Math.Round(surCharge, 2);
-            //        }
-            //    }
-            //}
+            if (chkSurChargeOn && surCharge_percent.Trim().Length > 0)
+            {
+                double min_amount = double.Parse(string.IsNullOrEmpty(surCharge_minAmount) ? "0" : surCharge_minAmount);
+                if (((total_amount - total_tip) + custom_split_amount) < min_amount) //Nhỏ hơn số tiền mới cộng Fee ( tổng tiền chứ không phải tổng credit )
+                {
+                    if (surCharge_unit.Equals("%"))
+                    {
+                        double surCharge = (total_amount - total_tip) * (double.Parse(surCharge_percent) / 100.0);
+                        return Math.Round(surCharge, 2);
+                    }
+                    else  //FIX $
+                    {
+                        double surCharge = double.Parse(surCharge_percent);
+                        return Math.Round(surCharge, 2);
+                    }
+                }
+            }
 
             return 0;
         }

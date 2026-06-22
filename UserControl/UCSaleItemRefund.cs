@@ -6,6 +6,7 @@ namespace NailsChekin.UserControl
 {
     public partial class UCSaleItemRefund : DevExpress.XtraEditors.XtraUserControl
     {
+        public string detail_id = "";   // pk_seq của dòng (vw_AllOrderItems.detail_id) -> refund đúng dòng
         public string item_id = "";
         public string item_name = "";
 
@@ -28,12 +29,13 @@ namespace NailsChekin.UserControl
             InitializeComponent();
         }
 
-        public UCSaleItemRefund(Control parent, string item_id, string item_name,
+        public UCSaleItemRefund(Control parent, string detail_id, string item_id, string item_name,
             double price, double quantity, double discount, double amount, bool alreadyRefunded)
         {
             InitializeComponent();
 
             this.parent = parent;
+            this.detail_id = detail_id;
             this.item_id = item_id;
             this.item_name = item_name;
             this.price = price;

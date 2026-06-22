@@ -623,11 +623,6 @@ namespace NailsChekin
 
         #region Extend Function
 
-        public void CheckCardCorrect()
-        {
-            
-        }
-
         // Tổng đã trả tới hiện tại = phần server đã thu (CHỈ combine, vì combine không nạp prior vào paymentList)
         //   + tổng payment trong paymentList phiên này.
         // Đơn lẻ (REPLACE): prior ĐÃ nằm trong paymentList -> external = 0.
@@ -640,10 +635,17 @@ namespace NailsChekin
             return Math.Round(externalPaid + CartHelper.GetPaymentTotal(this.paymentList), 2);
         }
 
+        // True khi đang thêm/nạp nhiều item 1 lượt (vd Confirm Add Quick Items) -> bỏ qua update tạm thời,
+        // gọi UpdatePaymentCartAmount đúng 1 lần ở cuối với cart đầy đủ (tránh bắn socket 4-5 lần, lần đầu thiếu item).
+        private bool _suppressCartUpdate = false;
+
         public void UpdatePaymentCartAmount(bool check_promotion = true, bool update_cart = true, bool main_form_onload = false)
         {
             if (main_form_onload)
                 return; // not call first from open
+
+            if (_suppressCartUpdate)
+                return; // đang thêm nhiều item 1 lượt -> sẽ gọi 1 lần ở cuối
 
             try
             {
@@ -651,7 +653,6 @@ namespace NailsChekin
                 double totalDiscount = 0;
                 double totalCoupon = 0;
                 double subTotalIncludeTax = 0;
-                double totalRedeem = 0;
                 double totalRedeemVoucher = 0;
                 double total = 0;
                 double itemSold = 0;
@@ -693,9 +694,31 @@ namespace NailsChekin
                     btnCart_Tax.Title = "TAX (" + tax_percent + "%)" + Environment.NewLine + "$" + this.tax_redeem;
                 else
                     btnCart_Tax.Title = "TAX (" + tax_percent + "%)";
-                
+
+                if (this.reward_redeem > 0)
+                {
+                    btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("-$" + reward_redeem);
+                    btnCart_Reward.Enabled = true;
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(this.reward_balance) && double.Parse(this.reward_balance) > 0)
+                    {
+                        btnCart_Reward.Enabled = true;
+                        if (Core.USING_REWARD_PERCENT())
+                            btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: " + this.reward_balance + "%");
+                        else
+                            btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: $" + this.reward_balance);
+                    }
+                    else
+                    {
+                        btnCart_Reward.Title = "REWARD";
+                        btnCart_Reward.Enabled = false;
+                    }
+                }
+
                 subTotalIncludeTax = Math.Round(subTotal + this.tax_redeem, 2);
-                total = subTotalIncludeTax - totalCoupon - totalRedeemVoucher - this.salon_credit_redeem;
+                total = subTotalIncludeTax - this.reward_redeem - totalCoupon - totalRedeemVoucher - this.salon_credit_redeem;
                 if (total < 0)
                     total = 0;
 
@@ -737,23 +760,11 @@ namespace NailsChekin
                 //    }
                 //}
 
-                //if (Constants.send_payment_cart)  //Hạn chế socket, chỉ bật cho các tiệm xài
-                //{
-                //    if (update_cart)  //&& !check_promotion
-                //    {
-                //        Task.Run(() =>
-                //        {
-                //            Cart myCart = POS_GetCart();
-                //            MainCart.SendCart(myCart);
-                //        });
-                //    }
-                //}
-
                 // Đồng bộ cart sang app Check-In là 1 HTTP call ra server (timeout mặc định 100s).
-                // Build JSON trên UI thread (đọc controls) rồi đẩy network call xuống background
-                // -> không block UI. Trước đây gọi sync ngay đây nên bấm Confirm bị treo lâu khi mạng/server chậm.
+                // Build JSON trên UI thread (đọc controls) rồi gửi qua hàng đợi single-flight + coalescing
+                // -> không block UI VÀ không gửi song song lệch thứ tự (tránh thiếu item khi thêm quick item dồn dập).
                 string jcartSync = this.Get_JCart_Current();
-                Task.Run(() => CartHelper.UpdateCartInfoSignalR(jcartSync));
+                CartHelper.UpdateCartInfoSignalRQueued(jcartSync);
             }
             catch { }
         }
@@ -809,41 +820,25 @@ namespace NailsChekin
 
         double reward_percent_discount = 0;
         double reward_percent_owner = 100; //mac dinh chu chiu
+        double reward_redeem = 0;
         public void UpdateRedeemAmount(double redeem_amount, double reward_percent_discount, string reward_percent_owner)
         {
-            //this.reward_percent_discount = reward_percent_discount;
-            //this.reward_percent_owner = string.IsNullOrEmpty(reward_percent_owner) ? 100 : double.Parse(reward_percent_owner);
-            //txtTotalReedem.Text = "$" + redeem_amount;
+            this.reward_percent_discount = reward_percent_discount;
+            this.reward_percent_owner = string.IsNullOrEmpty(reward_percent_owner) ? 100 : double.Parse(reward_percent_owner);
+            this.reward_redeem = redeem_amount;
 
-            //if (redeem_amount > 0) {
-            //    btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("-$" + redeem_amount);
-            //}
-            //else {
-            //    //if (!string.IsNullOrEmpty(this.reward_balance) && double.Parse(this.reward_balance) > 0)
-            //    //{
-            //    //    if (Core.USING_REWARD_PERCENT())
-            //    //        btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: " + this.reward_balance + "%");
-            //    //    else
-            //    //        btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: $" + this.reward_balance);
-            //    //}
-            //    //else
-            //    //{
-            //    //    btnCart_Reward.Title = "REWARD";
-            //    //}
-            //}
+            this.UpdatePaymentCartAmount();
 
-            //this.UpdatePaymentCartAmount();
+            //Update Amount
+            double total_amount = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
+            double total_pay_amount = CartHelper.GetPaymentTotal(this.paymentList);
+            UIHelper.SafeUI(lbCart_Tender, () => lbCart_Tender.Text = Math.Round(total_amount - total_pay_amount, 2).ToString());
 
-            ////Update Amount
-            //double total_amount = Utilitys.getTotalAmount(lbCart_AmtDue.Text);
-            //double total_pay_amount = CartHelper.GetPaymentTotal(this.paymentList);
-            //UIHelper.SafeUI(lbCart_Tender, () => lbCart_Tender.Text = Math.Round(total_amount - total_pay_amount, 2).ToString());
-
-            ////Neu Tender <= 0 => check-out luon giong nhu bam cac nut payment
-            //if (Math.Round(total_amount - total_pay_amount, 2) <= 0)
-            //{
-            //    Payment_New_Process("REWARD", "");
-            //}
+            //Neu Tender <= 0 => check-out luon giong nhu bam cac nut payment
+            if (Math.Round(total_amount - total_pay_amount, 2) <= 0)
+            {
+                Payment_New_Process("REWARD", "");
+            }
 
         }
 
@@ -1108,7 +1103,8 @@ namespace NailsChekin
                         }
                         else
                         {
-                            this.surcharge_amount = Utilitys.getSurcharge((total_charge + total_pos_tip), total_pos_tip);
+                            double non_credit_amount = CartHelper.GetPaymentCashTotal(this.paymentList);
+                            this.surcharge_amount = Utilitys.getSurcharge((total_charge + total_pos_tip), total_pos_tip, non_credit_amount);
                             total_charge += this.surcharge_amount;
                         }
                     }
@@ -1492,8 +1488,8 @@ namespace NailsChekin
                                   'customerPhone': '',
                                   'orderStatus': 0,
                                   'subtotal': " + Utilitys.getTotalAmount(lbCart_SubTotal.Text) + @",
-                                  'reward': 0,
-                                  'totalReward': 0,
+                                  'reward': " + this.reward_redeem + @",
+                                  'totalReward': " + this.reward_balance + @",
                                   'discount': " + this.discount_redeem + @",
                                   'giftcardNumber': '',
                                   'giftcardAmount': 0,
@@ -2068,6 +2064,7 @@ namespace NailsChekin
                     this.reward_balance = "0";
                     this.reward_percent_discount = 0;
                     this.reward_percent_owner = 100; //mac dinh chu chiu
+                    this.reward_redeem = 0;
                     this.credit_balance = "0";
 
                     this.tax_percent = Core.TAX_PERCENT();
@@ -3790,7 +3787,12 @@ namespace NailsChekin
 
         private void btnCart_Reward_Click(object sender, EventArgs e)
         {
+            double subTotal = Utilitys.getTotalAmount(lbCart_Tender.Text);
 
+            FormRewardRedeem frm = new FormRewardRedeem(this, this.reward_balance, subTotal.ToString());
+            frm.StartPosition = FormStartPosition.CenterScreen;
+            frm.ShowDialog(this);
+            frm.Dispose();
         }
 
         private void btnCart_Method_SalonCredit_Click(object sender, EventArgs e)
@@ -4689,9 +4691,21 @@ namespace NailsChekin
 
             //Get Reward
             string customer_id = Newtonsoft.Json.Linq.JObject.Parse(responce)["id"].ToString(); ;
-            var reward = Utilitys.CALL_API("Customer/getRewardBalance?customer_id=" + customer_id, "", "GET", true);
+            this.reward_balance = Utilitys.CALL_API("Customer/getRewardBalance?customer_id=" + customer_id, "", "GET", true);
 
-            this.reward_balance = reward.ToString();
+            if (!string.IsNullOrEmpty(this.reward_balance) && double.Parse(this.reward_balance) > 0)
+            {
+                btnCart_Reward.Enabled = true;
+                if (Core.USING_REWARD_PERCENT())
+                    btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: " + this.reward_balance + "%");
+                else
+                    btnCart_Reward.Title = "REWARD" + Environment.NewLine + ("BAL: $" + this.reward_balance);
+            }
+            else
+            {
+                btnCart_Reward.Title = "REWARD";
+                btnCart_Reward.Enabled = false;
+            }
         }
 
         public void ResetCustomers(bool send_signal = false)
@@ -4701,6 +4715,8 @@ namespace NailsChekin
             lbCart_CustomerName.Text = "CUSTOMER: " + customer_name.ToUpper();
             svgCart_RemoveCustomer.Visible = false;
             this.reward_balance = "0";
+            this.reward_redeem = 0;
+            btnCart_Reward.Title = "REWARD";
 
             if (send_signal)
                 CartHelper.RemoveCustomerInfoSignalR();
@@ -4842,6 +4858,9 @@ namespace NailsChekin
             }
 
             var content = panelCartItemsTouch.Content;
+            // Tạo nhiều control 1 lượt: ctor UCCartItem (set txtPrice.Text) sẽ kích hoạt UpdatePaymentCartAmount mỗi item
+            // -> chặn tạm để không bắn socket 4-5 lần (lần đầu cart chưa đủ item), chỉ cập nhật 1 lần ở cuối.
+            _suppressCartUpdate = true;
             content.SuspendLayout();
             try
             {
@@ -4873,9 +4892,10 @@ namespace NailsChekin
             finally
             {
                 content.ResumeLayout();
+                _suppressCartUpdate = false;
             }
 
-            this.UpdatePaymentCartAmount(false);
+            this.UpdatePaymentCartAmount(false);   // gọi 1 lần duy nhất với cart đầy đủ
             SyncStartScanPanel();
         }
 
@@ -4905,6 +4925,8 @@ namespace NailsChekin
                     toAdd.Add(ci);
             }
 
+            // Thêm/tăng nhiều item 1 lượt -> chặn update tạm, chỉ cập nhật 1 lần ở cuối (tránh socket bắn nhiều lần thiếu item)
+            _suppressCartUpdate = true;
             content.SuspendLayout();
             try
             {
@@ -4943,9 +4965,10 @@ namespace NailsChekin
             finally
             {
                 content.ResumeLayout();
+                _suppressCartUpdate = false;
             }
 
-            this.UpdatePaymentCartAmount(false);
+            this.UpdatePaymentCartAmount(false);   // gọi 1 lần duy nhất với cart đầy đủ
             SyncStartScanPanel();
         }
 

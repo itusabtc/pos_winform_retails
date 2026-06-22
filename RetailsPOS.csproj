@@ -638,6 +638,12 @@
     <Compile Include="Popup\FormReports.Designer.cs">
       <DependentUpon>FormReports.cs</DependentUpon>
     </Compile>
+    <Compile Include="Popup\FormRewardRedeem.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Popup\FormRewardRedeem.Designer.cs">
+      <DependentUpon>FormRewardRedeem.cs</DependentUpon>
+    </Compile>
     <Compile Include="Popup\FormSaleList.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -885,6 +891,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Popup\FormReports.resx">
       <DependentUpon>FormReports.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Popup\FormRewardRedeem.resx">
+      <DependentUpon>FormRewardRedeem.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Popup\FormSaleList.resx">
       <DependentUpon>FormSaleList.cs</DependentUpon>

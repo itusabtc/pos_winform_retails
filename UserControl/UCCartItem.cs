@@ -1,13 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Drawing;
-using System.Data;
-using System.Text;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using DevExpress.XtraEditors;
 using NailsChekin.Models;
 using NailsChekin.Popup;
 using NailsChekin.Models.Helper;
@@ -85,8 +78,14 @@ namespace NailsChekin.UserControl
                 this.quantity = "0";
                 lbQty.Text = this.quantity;
 
-                FormMain form_parent = UIHelper.GetParentForm<FormMain>(this);
-                form_parent.RemoveCartItem(this.item_id, this.cart_item_id);
+                if (this.parent is FormMain formMain)
+                {
+                    formMain.RemoveCartItem(this.item_id, this.cart_item_id);
+                }
+                else if (this.parent is FormAddQuickItem formAddQuickItem)
+                {
+                    formAddQuickItem.RemoveCartItem(this.item_id, this.cart_item_id);
+                }
             }
 
             lbQty.Text = this.quantity;
@@ -102,11 +101,11 @@ namespace NailsChekin.UserControl
         {
             if (this.parent is FormMain formMain)
             {
-                ((FormMain)parent).RemoveCartItem(this.item_id, this.cart_item_id);
+                formMain.RemoveCartItem(this.item_id, this.cart_item_id);
             }
             else if (this.parent is FormAddQuickItem formAddQuickItem)
             {
-                ((FormAddQuickItem)parent).RemoveCartItem(this.item_id, this.cart_item_id);
+                formAddQuickItem.RemoveCartItem(this.item_id, this.cart_item_id);
             }
         }
 
@@ -162,20 +161,11 @@ namespace NailsChekin.UserControl
             frm.Dispose();
         }
 
-        private void txtPrice_MouseLeave(object sender, EventArgs e)
-        {
-            FormMain form_parent = UIHelper.GetParentForm<FormMain>(this);
-            //form_parent.ResetDefaultFocus();
-        }
-
         public void UpdatePrice(string new_price)
         {
             this.price = new_price;
             txtPrice.Text = "$" + new_price;
             lbTotal.Text = "$" + Math.Round((double.Parse(price) * double.Parse(quantity)), 2).ToString();
-
-            FormMain form_parent = UIHelper.GetParentForm<FormMain>(this);
-            form_parent.ResetDefaultFocus();
         }
 
         private void lbQty_Click(object sender, EventArgs e)
@@ -251,7 +241,6 @@ namespace NailsChekin.UserControl
                 this.svgIncrease.Click -= this.svgIncrease_Click;
                 this.lbQty.Click -= this.lbQty_Click;
                 this.txtPrice.TextChanged -= this.txtPrice_TextChanged;
-                this.txtPrice.MouseLeave -= this.txtPrice_MouseLeave;
                 this.txtProductName.Click -= this.txtProductName_Click;
                 this.txtProductName.TextChanged -= this.txtProductName_TextChanged;
 

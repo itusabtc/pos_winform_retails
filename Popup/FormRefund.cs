@@ -126,6 +126,7 @@ namespace NailsChekin.Popup
                 JObject it = tok as JObject;
                 if (it == null) continue;
 
+                string detailId = Str(Get(it, "detailId", "detail_id"));
                 string itemId = Str(Get(it, "itemId"));
                 string itemName = Str(Get(it, "itemName"));
                 double qty = Num(Get(it, "qty"));
@@ -136,7 +137,7 @@ namespace NailsChekin.Popup
 
                 sumItemSub += sub;
 
-                var row = new UCSaleItemRefund(this, itemId, itemName, price, qty, discount, sub, isRefunded);
+                var row = new UCSaleItemRefund(this, detailId, itemId, itemName, price, qty, discount, sub, isRefunded);
                 row.Width = itemWidth;
                 row.Location = new Point(0, locationY);
                 locationY += row.Height + 2;
@@ -181,11 +182,12 @@ namespace NailsChekin.Popup
             if (this.IsDisposed) return;
             if (refundTransNo == null) { await LoadOrder(); return; }
 
-            // 2) Ghi nhận refund từng item kèm thuế (refund_amount đã gồm tax), số GD hoàn của máy
+            // 2) Ghi nhận refund TỪNG dòng theo detail_id (duy nhất) kèm thuế -> refund_amount chuẩn từng dòng,
+            //    không lo quick item trùng itemId/itemName.
             string res = "OK";
             foreach (var row in refundRows)
             {
-                string DATA = BuildRefundJson(row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
+                string DATA = BuildRefundJson(row.detail_id, row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
                 res = await Task.Run(() => Utilitys.CALL_API("Order/refund", DATA, "POST", true));
                 if (this.IsDisposed) return;
                 if (IsApiError(res)) break;
@@ -258,7 +260,7 @@ namespace NailsChekin.Popup
             string res = "OK";
             foreach (var row in rows)
             {
-                string DATA = BuildRefundJson(row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
+                string DATA = BuildRefundJson(row.detail_id, row.item_id, row.item_name, RefundAmountWithTax(row), refundTransNo);
                 res = await Task.Run(() => Utilitys.CALL_API("Order/refund", DATA, "POST", true));
                 if (this.IsDisposed) return;
 
@@ -275,11 +277,7 @@ namespace NailsChekin.Popup
 
             PrintRefundReceipt(rows);
             CustomMessageBox.Show("Refund successful !!!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            // Reload để cập nhật trạng thái item; nếu đã refund hết -> đóng
-            await LoadOrder();
-            if (!this.IsDisposed && !btnRefundAll.Enabled)
-                this.Close();
+            this.Close();   // đóng popup; parent (UCSaleItem) reload lại list vì refunded = true
         }
 
         // In receipt refund: CHỈ gồm các item vừa hoàn + số ticket #, kèm tổng tiền hoàn.
@@ -346,13 +344,18 @@ namespace NailsChekin.Popup
             return Math.Round(r.amount * (1 + _taxRate), 2);
         }
 
-        private string BuildRefundJson(string itemId, string itemName, double amount, string transactionId)
+        private string BuildRefundJson(string detailId, string itemId, string itemName, double amount, string transactionId)
         {
             // Build bằng JObject để tránh lỗi khi itemName có dấu nháy.
+            // detailId = pk_seq của dòng -> API refund ĐÚNG dòng (kể cả quick item trùng itemId/itemName).
+            // detailId rỗng/0 -> API hiểu là Refund ALL (nhánh cũ).
             // transactionId = số GD hoàn của máy (refund_transactionNo) cho đơn thẻ; "" cho đơn tiền mặt.
+            long did;
+            long.TryParse(detailId, out did);
             var payload = new JObject
             {
                 ["orderId"] = long.Parse(_orderId),
+                ["detailId"] = did,
                 ["itemId"] = itemId,
                 ["itemName"] = itemName,
                 ["amount"] = amount,
