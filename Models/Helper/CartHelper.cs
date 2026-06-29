@@ -517,10 +517,15 @@ namespace NailsChekin.Models.Helper
             return responce;
         }
 
-        // ── Gửi cart sync kiểu single-flight + coalescing ──────────────────────────────
+        // ── Gửi cart sync kiểu single-flight + coalescing + retry-until-acked ──────────
         // Mỗi lúc CHỈ 1 request đang bay; luôn gửi snapshot MỚI NHẤT, tuần tự.
         // Tránh nhiều Task.Run song song tới server không đúng thứ tự -> cart bị thiếu item
         // (hay gặp khi thêm/sửa quick item theo cụm). Vẫn không block UI.
+        //
+        // QUAN TRỌNG (fix Android thiếu data): snapshot CHỈ được clear khi gửi THÀNH CÔNG.
+        // Lúc chập mạng/disconnect mà gửi fail -> KHÔNG drop nữa, backoff rồi gửi lại đến khi
+        // tới nơi (hoặc bị snapshot mới hơn thay thế). Vì mỗi sync là full-state nên chỉ cần
+        // lần cuối cùng tới server là Android đủ data — không cần replay từng event.
         private static readonly object _cartSyncLock = new object();
         private static string _pendingCartJson = null;   // snapshot chờ gửi (latest wins)
         private static bool _cartSyncRunning = false;     // đang có worker chạy?
@@ -536,17 +541,43 @@ namespace NailsChekin.Models.Helper
 
             Task.Run(() =>
             {
+                int failStreak = 0;
                 while (true)
                 {
                     string json;
                     lock (_cartSyncLock)
                     {
                         if (_pendingCartJson == null) { _cartSyncRunning = false; return; }
-                        json = _pendingCartJson;
-                        _pendingCartJson = null;
+                        json = _pendingCartJson;     // KHÔNG xóa vội: chỉ clear khi gửi thành công
                     }
 
-                    try { UpdateCartInfoSignalR(json); } catch { /* lỗi mạng -> bỏ qua, lần sau gửi tiếp */ }
+                    bool ok = false;
+                    try
+                    {
+                        string resp = UpdateCartInfoSignalR(json);
+                        // Utilitys.CALL_API trả "Error API: ..." khi lỗi mạng/HTTP (không throw) -> coi là fail
+                        ok = !string.IsNullOrEmpty(resp)
+                             && !resp.TrimStart().StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch { ok = false; }
+
+                    if (ok)
+                    {
+                        failStreak = 0;
+                        lock (_cartSyncLock)
+                        {
+                            // chỉ clear nếu chưa có snapshot mới hơn chen vào trong lúc đang gửi
+                            if (ReferenceEquals(_pendingCartJson, json))
+                                _pendingCartJson = null;
+                        }
+                    }
+                    else
+                    {
+                        // gửi fail (chập mạng/socket disconnect) -> giữ snapshot, backoff rồi gửi lại.
+                        failStreak++;
+                        int backoffMs = Math.Min(5000, 500 * failStreak); // 0.5s,1s,1.5s,... tối đa 5s
+                        System.Threading.Thread.Sleep(backoffMs);
+                    }
                 }
             });
         }

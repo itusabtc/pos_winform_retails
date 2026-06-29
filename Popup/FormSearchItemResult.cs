@@ -36,6 +36,9 @@ namespace NailsChekin.Popup
 
         private void btnFinish_Click(object sender, EventArgs e)
         {
+            //Đã chọn -> tắt tiếng cảnh báo ngay trước khi mở form Add New
+            try { parent?.StopWarningBeep(); } catch { }
+
             FormNewItem frm = new FormNewItem(parent, txtSearchItemBarcode.Text, this.is_search_sku);
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
@@ -46,6 +49,9 @@ namespace NailsChekin.Popup
 
         private void FormSearchItemResult_FormClosed(object sender, FormClosedEventArgs e)
         {
+            //Đóng form Yes/No (bấm NO, hoặc đóng bằng cách khác) -> tắt tiếng cảnh báo
+            try { parent?.StopWarningBeep(); } catch { }
+
             //Xử lý không bị cảm giác giật do xài Dispose() ngay nếu đóng thẳng
             _ = Task.Run(async () =>
             {

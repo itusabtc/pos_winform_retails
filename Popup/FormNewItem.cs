@@ -200,8 +200,9 @@ namespace NailsChekin.Popup
                 return;
             }
 
-            //if (parentForm != null)
-            //    parentForm.AddNewItemToCard(responce, barcode);
+            //Tạo item mới từ luồng Scan Barcode -> add luôn item vừa lưu database vào giỏ hàng hiện tại
+            if (parentForm != null)
+                parentForm.AddNewItemToCard(responce);
             //else if (parentInventory != null)
             //    parentInventory.SendSearchItemLockUp();
 

@@ -45,6 +45,7 @@ namespace NailsChekin
 
         string customer_selected = "0";
         string customer_name = "";
+        string customer_phone = "";
 
         public string selected_ticket_combine_id = "";
         public bool selected_ticket_combine = false;
@@ -495,6 +496,31 @@ namespace NailsChekin
         }
 
         private SocketIoClientHelper _socketHelper;
+        private bool _socketEverConnected = false;   // đã từng connect chưa? -> phân biệt connect đầu vs reconnect
+
+        // Đẩy lại trạng thái cart hiện tại sang app Check-In/Android (dùng sau khi socket reconnect).
+        // Get_JCart_Current đọc control UI nên phải chạy trên UI thread.
+        private void ReSyncCurrentCartToCheckInApp()
+        {
+            try
+            {
+                if (this.IsDisposed) return;
+                Action doSync = () =>
+                {
+                    try
+                    {
+                        string jcartSync = this.Get_JCart_Current();
+                        CartHelper.UpdateCartInfoSignalRQueued(jcartSync);
+                    }
+                    catch (Exception ex) { LogHelper.SaveLOG_Crash(ex.Message, "ReSyncCurrentCartToCheckInApp inner"); }
+                };
+
+                if (this.InvokeRequired) this.BeginInvoke(doSync);
+                else doSync();
+            }
+            catch (Exception ex) { LogHelper.SaveLOG_Crash(ex.Message, "ReSyncCurrentCartToCheckInApp"); }
+        }
+
         private async Task ConnectToSocketIOServerAsync()
         {
             // ===== Helpers cục bộ: set property bằng reflection để không lỗi khác version =====
@@ -574,11 +600,27 @@ namespace NailsChekin
                 invoker: this // marshal về UI thread
             );
 
+            // Re-subscribe kênh custom / re-join room (nếu server cần) sau MỖI lần connect.
+            // .On(...) đã đăng ký 1 lần trên _socket và được giữ qua các lần reconnect, nên đây chỉ là hook
+            // dự phòng cho việc join room theo paringCode về sau.
+            _socketHelper.Resubscribe = (sock) =>
+            {
+                Console.WriteLine("SocketIO: (re)subscribe channels");
+            };
+
             // 3) Đăng ký sự kiện
             _socketHelper.Connected += () =>
             {
                 navSocketStatus.Caption = "Socket: Connected!";
                 Console.WriteLine("SocketIO: Connected");
+
+                // Sau khi RECONNECT (không phải lần connect đầu): đẩy lại snapshot cart hiện tại để
+                // app Android reconcile data đã bỏ lỡ trong lúc disconnect. Snapshot là full-state nên
+                // chỉ cần 1 lần tới nơi là đồng bộ lại đầy đủ.
+                if (_socketEverConnected)
+                    ReSyncCurrentCartToCheckInApp();
+
+                _socketEverConnected = true;
             };
 
             _socketHelper.Disconnected += () =>
@@ -797,7 +839,7 @@ namespace NailsChekin
                                 'comment': '',
                                 'customerId': " + (string.IsNullOrEmpty(this.customer_selected) ? "0" : this.customer_selected) + @",
                                 'customerName': '" + (string.IsNullOrEmpty(this.customer_name) ? "" : Regex.Replace(this.customer_name, "'", "")) + @"',
-                                'customerPhone': '',
+                                'customerPhone': '" + (string.IsNullOrEmpty(this.customer_phone) ? "" : Regex.Replace(this.customer_phone, "'", "")) + @"',
                                 'orderStatus': 0,
                                 'subtotal': " + Utilitys.getTotalAmount(lbCart_SubTotal.Text) + @",
                                 'reward': 0, 
@@ -1485,7 +1527,7 @@ namespace NailsChekin
                                   'comment': '',
                                   'customerId': " + customerId + @",
                                   'customerName': '" + Regex.Replace(this.customer_name, "'", "") + @"',
-                                  'customerPhone': '',
+                                  'customerPhone': '" + (string.IsNullOrEmpty(this.customer_phone) ? "" : Regex.Replace(this.customer_phone, "'", "")) + @"',
                                   'orderStatus': 0,
                                   'subtotal': " + Utilitys.getTotalAmount(lbCart_SubTotal.Text) + @",
                                   'reward': " + this.reward_redeem + @",
@@ -2061,6 +2103,8 @@ namespace NailsChekin
                     CartHelper.RemoveCustomerInfoSignalR();
                     lbCart_CustomerName.Text = "CUSTOMER: GUEST";
                     this.customer_selected = "";
+                    this.customer_name = "";    // tránh sync cart sau checkout còn dính customerName cũ
+                    this.customer_phone = "";   // (UpdatePaymentCartAmount bên dưới sẽ bắn snapshot qua socket)
                     this.reward_balance = "0";
                     this.reward_percent_discount = 0;
                     this.reward_percent_owner = 100; //mac dinh chu chiu
@@ -4648,6 +4692,7 @@ namespace NailsChekin
                 //Update Customer Info
                 customer_selected = id;
                 customer_name = firstname + " " + lastname;
+                customer_phone = phone ?? "";
                 lbCart_CustomerName.Text = "CUSTOMER: " + customer_name;
                 svgCart_RemoveCustomer.Visible = true;
 
@@ -4685,6 +4730,7 @@ namespace NailsChekin
             JObject jData = JObject.Parse(responce);
             customer_selected = jData["id"].ToString();
             customer_name = jData["firstName"].ToString() + " " + jData["lastName"].ToString();
+            customer_phone = jData["phone"]?.ToString() ?? "";
 
             lbCart_CustomerName.Text = "CUSTOMER: " + customer_name.ToUpper();
             svgCart_RemoveCustomer.Visible = true;
@@ -4712,6 +4758,7 @@ namespace NailsChekin
         {
             customer_selected = "";
             customer_name = "GUEST";
+            customer_phone = "";
             lbCart_CustomerName.Text = "CUSTOMER: " + customer_name.ToUpper();
             svgCart_RemoveCustomer.Visible = false;
             this.reward_balance = "0";
@@ -4765,6 +4812,9 @@ namespace NailsChekin
             JArray jArray = JArray.Parse(responce);
             if (jArray.Count <= 0)
             {
+                //Item chưa có trong hệ thống -> phát tiếng cảnh báo kéo dài rồi hiện popup Add New
+                PlayWarningBeep();
+
                 FormSearchItemResult frm = new FormSearchItemResult(this, barcode, !is_search_barcode);
                 frm.StartPosition = FormStartPosition.CenterScreen;
                 frm.ShowDialog(this);
@@ -4814,6 +4864,124 @@ namespace NailsChekin
                 frm.ShowDialog(this);
                 frm.Dispose();
             }
+        }
+
+        private System.Threading.CancellationTokenSource _warningBeepCts;
+        private System.Media.SoundPlayer _warningPlayer;
+
+        /// <summary>
+        /// Phát tiếng cảnh báo kiểu còi kéo dài ~10 giây khi scan item chưa có trong hệ thống.
+        /// Tự tạo WAV tông 1000Hz rồi phát LẶP qua SoundPlayer -> đi qua loa thường (sound card),
+        /// to hơn SystemSounds và không phụ thuộc PC speaker như Console.Beep (nhiều máy không có).
+        /// </summary>
+        private void PlayWarningBeep()
+        {
+            try
+            {
+                //Dừng lần cảnh báo trước (nếu còn đang kêu do scan liên tiếp)
+                StopWarningBeep();
+
+                var cts = new System.Threading.CancellationTokenSource();
+                _warningBeepCts = cts;
+
+                var ms = BuildBeepWav(1000, 400, 150); // 400ms kêu + 150ms nghỉ -> loop thành bíp-bíp
+                var player = new System.Media.SoundPlayer(ms);
+                _warningPlayer = player;
+                player.PlayLooping();
+
+                //Tự dừng sau 10 giây (nếu không bị lần scan mới thay thế)
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(10000, cts.Token);
+                        player.Stop();
+                    }
+                    catch { /* bị scan mới hủy -> player đã được StopWarningBeep dừng */ }
+                });
+            }
+            catch { }
+        }
+
+        public void StopWarningBeep()
+        {
+            try { _warningBeepCts?.Cancel(); } catch { }
+            try { _warningPlayer?.Stop(); } catch { }
+            try { _warningPlayer?.Dispose(); } catch { }
+            _warningPlayer = null;
+        }
+
+        /// <summary>
+        /// Tạo 1 đoạn WAV PCM 16-bit mono trong bộ nhớ: tông sin tần số freq trong toneMs, sau đó silenceMs im lặng.
+        /// </summary>
+        private System.IO.MemoryStream BuildBeepWav(int freq, int toneMs, int silenceMs)
+        {
+            int sampleRate = 44100;
+            short bitsPerSample = 16;
+            short channels = 1;
+            int toneSamples = sampleRate * toneMs / 1000;
+            int silenceSamples = sampleRate * silenceMs / 1000;
+            int dataSize = (toneSamples + silenceSamples) * channels * (bitsPerSample / 8);
+
+            var ms = new System.IO.MemoryStream(44 + dataSize);
+            var bw = new System.IO.BinaryWriter(ms);
+
+            bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+            bw.Write(36 + dataSize);
+            bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+            bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+            bw.Write(16);                                   // kích thước fmt chunk
+            bw.Write((short)1);                             // PCM
+            bw.Write(channels);
+            bw.Write(sampleRate);
+            bw.Write(sampleRate * channels * (bitsPerSample / 8)); // byte rate
+            bw.Write((short)(channels * (bitsPerSample / 8)));     // block align
+            bw.Write(bitsPerSample);
+            bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+            bw.Write(dataSize);
+
+            double amplitude = 28000; // gần mức tối đa 32767 -> kêu to
+            for (int i = 0; i < toneSamples; i++)
+            {
+                double t = (double)i / sampleRate;
+                bw.Write((short)(amplitude * Math.Sin(2 * Math.PI * freq * t)));
+            }
+            for (int i = 0; i < silenceSamples; i++)
+                bw.Write((short)0);
+
+            bw.Flush();
+            ms.Position = 0;
+            return ms;
+        }
+
+        /// <summary>
+        /// Sau khi tạo item mới (FormNewItem lưu vào database) thì add luôn item đó vào giỏ hàng hiện tại.
+        /// responce là object trả về từ API Product/addProduct (đã có id mới).
+        /// </summary>
+        public void AddNewItemToCard(string responce)
+        {
+            if (string.IsNullOrEmpty(responce) || !Utilitys.IsValidJson(responce))
+                return;
+
+            JObject obj = JObject.Parse(responce);
+            string item_id = obj["id"]?.ToString();
+            string item_name = obj["name"]?.ToString();
+            string price = obj["price"]?.ToString();
+
+            if (string.IsNullOrEmpty(item_id) || item_id == "0")
+                return;
+
+            if (string.IsNullOrEmpty(price))
+                price = "0";
+
+            this.ResetDefaultFocus();
+
+            //Check Promotion giống luồng scan: nếu có promotion thì đã add line riêng, không add line Cart nữa
+            string promo = Check_Promotion(item_id, item_name, price, "1", true);
+            if (Utilitys.IsValidJson(promo) && !promo.Equals("[]"))
+                return;
+
+            this.AddItemToCard(item_id, item_name, price);
         }
 
         public void AddItemToCard(string item_id, string item_name, string price)

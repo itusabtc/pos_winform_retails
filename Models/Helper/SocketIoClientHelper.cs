@@ -31,6 +31,13 @@ namespace NailsChekin.Models.Helper
         private volatile bool _userStopRequested;
         private volatile bool _disposed;
 
+        // Phát hiện rớt kết nối TỨC THÌ: event native của lib set TCS này -> vòng keep-alive bừng dậy ngay.
+        private volatile TaskCompletionSource<bool> _connLostTcs;
+        // Mốc activity gần nhất (ticks) để phát hiện half-open; cập nhật từ pong/message/connect.
+        private long _lastActivityUtcTicks;
+        // Chu kỳ "watchdog" của vòng keep-alive: poll IsConnected + chờ tín hiệu rớt. Ngắn để phản ứng nhanh.
+        private readonly TimeSpan _watchdogInterval = TimeSpan.FromSeconds(5);
+
         public bool IsConnected { get { return _socket.Connected; } }
         public string Url { get; private set; }
 
@@ -85,11 +92,40 @@ namespace NailsChekin.Models.Helper
             // Kênh "message" (nếu server có gửi)
             _socket.On("message", delegate (SocketIOClient.SocketIOResponse res)
             {
+                Touch(); // có dữ liệu vào -> kết nối còn sống
                 string msg = null;
                 try { msg = res.GetValue<string>(); } catch { }
                 var capture = msg;
                 RaiseOnUI(delegate { if (MessageReceived != null) MessageReceived(capture); });
             });
+
+            // Bắt event NATIVE của thư viện để phát hiện rớt kết nối NGAY LẬP TỨC
+            // (transport đóng / heartbeat timeout) thay vì chờ vòng poll. Reconnection của lib đã tắt
+            // nên các event này chỉ báo trạng thái, việc reconnect vẫn do RunLoopAsync tự quản.
+            _socket.OnDisconnected += delegate (object s, string reason)
+            {
+                SignalConnectionLost();
+                RaiseOnUI(delegate { if (Disconnected != null) Disconnected(); });
+            };
+            _socket.OnError += delegate (object s, string err)
+            {
+                SignalConnectionLost();
+                var capture = err;
+                RaiseOnUI(delegate { if (Error != null) Error(new Exception("SocketIO error: " + capture)); });
+            };
+            // Pong từ server = bằng chứng kết nối còn sống -> dùng cho half-open detection.
+            _socket.OnPong += delegate (object s, TimeSpan e) { Touch(); };
+        }
+
+        private void Touch()
+        {
+            Interlocked.Exchange(ref _lastActivityUtcTicks, DateTime.UtcNow.Ticks);
+        }
+
+        private void SignalConnectionLost()
+        {
+            var tcs = _connLostTcs;
+            if (tcs != null) tcs.TrySetResult(true);
         }
 
         public async Task StartAsync()
@@ -147,9 +183,6 @@ namespace NailsChekin.Models.Helper
         {
             var rnd = new Random();
             int attempt = 0;
-            DateTime lastActivityUtc = DateTime.UtcNow;
-
-            Action touch = delegate { lastActivityUtc = DateTime.UtcNow; };
 
             while (!ct.IsCancellationRequested && !_userStopRequested)
             {
@@ -158,8 +191,12 @@ namespace NailsChekin.Models.Helper
                     attempt++;
                     RaiseOnUI(delegate { if (ReconnectAttempt != null) ReconnectAttempt(attempt); });
 
+                    // Tín hiệu "mất kết nối" mới cho phiên sắp tới (event native sẽ Set khi rớt).
+                    _connLostTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
                     await ConnectWithTimeoutAsync(ct);
-                    touch();
+                    Touch();
+                    DateTime connectedAtUtc = DateTime.UtcNow;
 
                     RaiseOnUI(delegate { if (Connected != null) Connected(); });
 
@@ -169,30 +206,32 @@ namespace NailsChekin.Models.Helper
                     // gửi bù emit còn hàng
                     await DrainEmitQueueAsync(ct);
 
-                    // vòng keep-alive
+                    // Vòng keep-alive: poll ngắn (_watchdogInterval) NHƯNG bừng dậy NGAY khi event native báo rớt.
+                    DateTime lastPingUtc = DateTime.MinValue;
                     while (IsConnected && !ct.IsCancellationRequested && !_userStopRequested)
                     {
-                        // half-open: không có activity quá lâu (pingInterval + pongTimeout)
-                        if (DateTime.UtcNow - lastActivityUtc > _pongTimeout + _pingInterval)
+                        // half-open fallback: quá lâu không có activity (pong/message) -> ép reconnect
+                        var lastAct = new DateTime(Interlocked.Read(ref _lastActivityUtcTicks), DateTimeKind.Utc);
+                        if (DateTime.UtcNow - lastAct > _pongTimeout + _pingInterval)
                         {
                             RaiseOnUI(delegate { if (Error != null) Error(new TimeoutException("Half-open detected; force reconnect")); });
                             break;
                         }
 
-                        // ping nhẹ (đổi event phù hợp server bạn nếu cần)
-                        try
+                        // ping app-level theo cadence _pingInterval (không spam mỗi watchdog tick)
+                        if (DateTime.UtcNow - lastPingUtc >= _pingInterval)
                         {
-                            await SafeEmitInternal("__pos_ping__", null);
-                        }
-                        catch (Exception ex)
-                        {
-                            RaiseOnUI(delegate { if (Error != null) Error(ex); });
-                            break;
+                            try { await SafeEmitInternal("__pos_ping__", null); lastPingUtc = DateTime.UtcNow; }
+                            catch (Exception ex) { RaiseOnUI(delegate { if (Error != null) Error(ex); }); break; }
                         }
 
-                        await Task.Delay(_pingInterval, ct);
-                        touch();
+                        // chờ tối đa _watchdogInterval, hoặc thoát NGAY khi _connLostTcs được Set (rớt kết nối)
+                        var lostTask = _connLostTcs.Task;
+                        var finished = await Task.WhenAny(lostTask, Task.Delay(_watchdogInterval, ct));
+                        if (finished == lostTask) break;
                     }
+
+                    bool wasStable = (DateTime.UtcNow - connectedAtUtc) >= TimeSpan.FromSeconds(15);
 
                     // rơi khỏi vòng trong ⇒ coi như mất kết nối
                     if (!ct.IsCancellationRequested && !_userStopRequested)
@@ -201,8 +240,15 @@ namespace NailsChekin.Models.Helper
                         try { await _socket.DisconnectAsync(); } catch { }
                     }
 
-                    // reset số lần attempt khi đã từng vào được trạng thái connected
-                    if (IsConnected == false) { /* giữ attempt để backoff */ }
+                    // Phiên đã ổn định đủ lâu -> reset attempt để reconnect lần tới gần như tức thì,
+                    // và ưu tiên LẠI WebSocket cho lần connect sau (phòng khi trước đó đã fallback xuống Polling
+                    // vì mạng chập chờn — nay đã ổn định nên thử WebSocket trở lại, không kẹt ở Polling vĩnh viễn).
+                    // (vừa connect đã rớt = flap -> GIỮ attempt để backoff tăng dần, tránh hammer server)
+                    if (wasStable)
+                    {
+                        attempt = 0;
+                        if (_fallbackToPolling) TrySetTransport(_socket.Options, "WebSocket");
+                    }
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
@@ -213,12 +259,17 @@ namespace NailsChekin.Models.Helper
 
                 if (ct.IsCancellationRequested || _userStopRequested) break;
 
-                // exponential backoff + jitter
-                int backoff = attempt <= 1 ? 1 : (int)Math.Pow(2, Math.Min(5, attempt - 1)); // 1,2,4,8,16,32
-                if (backoff > _maxBackoffSeconds) backoff = _maxBackoffSeconds;
-                int jitterMs = rnd.Next(0, 1000);
-                await Task.Delay(TimeSpan.FromSeconds(backoff));
-                await Task.Delay(jitterMs);
+                // Backoff: NHANH ở các lần đầu (reconnect gần như tức thì sau khi rớt), chậm dần nếu fail liên tục.
+                double backoffSec =
+                    attempt <= 1 ? 0.0 :
+                    attempt == 2 ? 0.5 :
+                    Math.Min(_maxBackoffSeconds, Math.Pow(2, Math.Min(5, attempt - 2))); // 1,2,4,8,16,32
+                int jitterMs = rnd.Next(0, 300);
+                if (backoffSec > 0)
+                {
+                    try { await Task.Delay(TimeSpan.FromSeconds(backoffSec), ct); } catch (OperationCanceledException) { break; }
+                }
+                try { await Task.Delay(jitterMs, ct); } catch (OperationCanceledException) { break; }
 
                 // Tùy chọn đổi Transport sang Polling sau vài lần fail (chỉ hoạt động nếu bản lib expose Transport)
                 if (_fallbackToPolling && attempt >= 3)
