@@ -691,6 +691,9 @@ namespace NailsChekin.Models
         {
             try
             {
+                // Đồng bộ memory + file — MapConfigToLocalSystem đọc Constants.ALL_CONFIG.
+                Constants.ALL_CONFIG = configs ?? "";
+
                 string forderLog = "C:\\POSLogs\\Retails\\Config\\";
                 if (!Directory.Exists(forderLog))
                     Directory.CreateDirectory(forderLog);
@@ -924,8 +927,8 @@ namespace NailsChekin.Models
         {
             try
             {
-                //string URL = "https://api-retails.nailsbeautysupply.com/api/" + endpoint;
-                string URL = "http://178.63.64.96:8088/api/" + endpoint;
+                //string URL = "http://178.63.64.96:8088/api/" + endpoint;
+                string URL = Constants.hostName + "/api/" + endpoint;
                 //string DATA = @"{""userName"":""RET32132"",""password"":""123456""}";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(URL);
@@ -1082,7 +1085,7 @@ namespace NailsChekin.Models
                 // Ping a well-known server (e.g., Google's public DNS server)
                 using (Ping ping = new Ping())
                 {
-                    PingReply reply = ping.Send("95.217.32.253", 2000); // 2 second timeout
+                    PingReply reply = ping.Send("178.63.64.96", 2000); // 2 second timeout
                     bool result = (reply != null && reply.Status == IPStatus.Success);
                     if (result == true)
                     {
@@ -1093,7 +1096,7 @@ namespace NailsChekin.Models
                 // Ping a well-known server (e.g., Google's public DNS server)
                 using (Ping ping = new Ping())
                 {
-                    PingReply reply = ping.Send("pos.nailspaofamerica.com", 5000); // 5 second timeout
+                    PingReply reply = ping.Send("admin.antpayai.com", 5000); // 5 second timeout
                     return reply != null && reply.Status == IPStatus.Success;
                 }
             }

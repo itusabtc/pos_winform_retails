@@ -189,6 +189,7 @@ namespace NailsChekin.Models.Payments
                 // Job sẽ check ở mốc 30s, 45s, 60s ... tối đa 180s.
                 if (sendOk)
                 {
+                    formMain.MarkP5PaymentPending(merchant_order_no);
                     StartP5PaymentStatusJob(formMain, merchant_order_no);
 
                     LogHelper.SaveLOG_Payment(
@@ -702,6 +703,15 @@ namespace NailsChekin.Models.Payments
                         if (!string.IsNullOrEmpty(merchant_order_no))  //Hủy job query order
                             CancelP5PaymentStatusJob(merchant_order_no);
 
+                        // User / máy cancel đóng lệnh: nếu chưa có payment trong cart thì xóa pending.
+                        // Còn nếu máy đã thu tiền (đã vào paymentList) thì giữ pending để reconnect retry checkout.
+                        if (topic.Equals("ecrhub.pay.close")
+                            && !string.IsNullOrEmpty(merchant_order_no)
+                            && !frmMain.HasP5PaymentInList(merchant_order_no))
+                        {
+                            frmMain.ClearP5PaymentPending(merchant_order_no);
+                        }
+
                         if (frmMain.frmCreditProcessing == null || frmMain.frmCreditProcessing.IsDisposed)
                         {
                             frmMain.CartEnableControl();
@@ -723,6 +733,29 @@ namespace NailsChekin.Models.Payments
                     string trans_no = biz_data["trans_no"] == null ? "" : biz_data["trans_no"].ToString();
                     merchant_order_no = biz_data["merchant_order_no"] == null ? "" : biz_data["merchant_order_no"].ToString();
 
+                    // Query/sale: chỉ coi là đã thu tiền khi trans_status = 2 (Success).
+                    // trans_status 1 = đang xử lý trên máy — giữ pending, không add payment sớm.
+                    string trans_status = biz_data["trans_status"] == null ? "2" : biz_data["trans_status"].ToString();
+                    if (!trans_status.Equals("2"))
+                    {
+                        LogHelper.SaveLOG_Payment(
+                            "P5 notify ignored (trans_status=" + trans_status + "). merchant_order_no=" + merchant_order_no,
+                            "ProcessPayment_CodePay WLAN_USB");
+                        return;
+                    }
+
+                    // Notify/query trễ của charge cũ — không gắn vào ticket/cart mới.
+                    if (!frmMain.IsP5MerchantRelevantToCurrentSession(merchant_order_no))
+                    {
+                        LogHelper.SaveLOG_Payment(
+                            "P5 notify ignored (stale / other session). merchant_order_no=" + merchant_order_no
+                            + " pending=" + frmMain.GetP5PendingMerchantOrderNo()
+                            + " current=" + frmMain.curent_order_payment_id,
+                            "ProcessPayment_CodePay WLAN_USB");
+                        CancelP5PaymentStatusJob(merchant_order_no);
+                        return;
+                    }
+
                     LogHelper.SaveLOG_Payment("payment_data: " + payment_data, "ProcessPayment_CodePay WLAN_USB - myPOSOrderId: " + merchant_order_no);
                     if (frmMain.paymentList == null)
                     {
@@ -732,6 +765,17 @@ namespace NailsChekin.Models.Payments
                     //frmMain.uiThread.Send(delegate (object state)
                     frmMain.Invoke((MethodInvoker)delegate
                     {
+                        // Chống double: notify + query cùng lúc (hoặc reconnect resume) dễ add 2 lần CC.
+                        if (!string.IsNullOrEmpty(merchant_order_no) && frmMain.HasP5PaymentInList(merchant_order_no))
+                        {
+                            LogHelper.SaveLOG_Payment(
+                                "Skip duplicate P5 payment notify. merchant_order_no=" + merchant_order_no,
+                                "ProcessPayment_CodePay WLAN_USB");
+                            frmMain.CHECK_PAYMENT_CORRECT(true);
+                            CancelP5PaymentStatusJob(merchant_order_no);
+                            return;
+                        }
+
                         PaymentModel _payment = new PaymentModel("CC", double.Parse(order_amount));
 
                         // Lưu thông tin in (thẻ + chữ ký) để form in receipt (TicketReceiptWithSignatue) lấy lên.
@@ -1017,6 +1061,52 @@ namespace NailsChekin.Models.Payments
             });
         }
 
+        /// <summary>
+        /// Khi P5 vừa reconnect: nếu vẫn còn merchant_order_no pending (popup đã đóng / checkout chưa xong)
+        /// thì bật lại interval + query ngay + restart status job.
+        /// </summary>
+        public static void ResumeP5PendingPayment(FormMain formMain, string merchant_order_no)
+        {
+            if (formMain == null || string.IsNullOrWhiteSpace(merchant_order_no))
+                return;
+
+            try
+            {
+                formMain.active_interval_check_wlan_payment = true;
+                formMain.MarkP5PaymentPending(merchant_order_no);
+                StartP5PaymentStatusJob(formMain, merchant_order_no);
+
+                LogHelper.SaveLOG_Payment(
+                    "ResumeP5PendingPayment: restart status job + immediate query. merchant_order_no=" + merchant_order_no,
+                    "P5-PENDING");
+
+                // Query ngay 1 lần (không chờ mốc 30s) — kết quả bắn về CodePay_Process_OnMessage.
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(800).ConfigureAwait(false); // đợi socket ổn định sau OnOpen
+                        if (!formMain.active_interval_check_wlan_payment) return;
+                        if (formMain.HasP5PaymentInList(merchant_order_no)) return;
+
+                        string queryResult = await CODEPAY_WLAN_QUERY_ORDER_ASYNC(formMain, merchant_order_no)
+                            .ConfigureAwait(false);
+                        LogHelper.SaveLOG_Payment(
+                            "Resume immediate query result. merchant_order_no=" + merchant_order_no + ", result=" + queryResult,
+                            "P5-PENDING");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogHelper.SaveLOG_Payment(ex.Message, "P5-PENDING Resume query Exception");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                LogHelper.SaveLOG_Payment(ex.Message, "ResumeP5PendingPayment Exception");
+            }
+        }
+
         private static void CancelP5PaymentStatusJob(string merchant_order_no)
         {
             if (string.IsNullOrWhiteSpace(merchant_order_no))
@@ -1034,6 +1124,12 @@ namespace NailsChekin.Models.Payments
 
                 LogHelper.SaveLOG_Payment("P5 payment status job cancelled. merchant_order_no=" + merchant_order_no, "P5-PAYMENT-STATUS-JOB");
             }
+        }
+
+        /// <summary>Public wrapper để FormMain clear pending / thay charge mới hủy job cũ.</summary>
+        public static void CancelP5PaymentStatusJobPublic(string merchant_order_no)
+        {
+            CancelP5PaymentStatusJob(merchant_order_no);
         }
 
         private static async Task RunP5PaymentStatusJobAsync(

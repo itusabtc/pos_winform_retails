@@ -41,15 +41,6 @@ namespace NailsChekin.Popup
             this.btnFinish = new NailsChekin.MyControls.ButtonRound();
             this.labelControl20 = new DevExpress.XtraEditors.LabelControl();
             this.ddCreditCardDevice = new DevExpress.XtraEditors.DropDownButton();
-            this.gbCodepaySetting = new System.Windows.Forms.GroupBox();
-            this.txtCodePayMerchantOrderNo = new DevExpress.XtraEditors.TextEdit();
-            this.labelControl4 = new DevExpress.XtraEditors.LabelControl();
-            this.txtCodePayAppId = new DevExpress.XtraEditors.TextEdit();
-            this.labelControl2 = new DevExpress.XtraEditors.LabelControl();
-            this.txtCodePayIPAddress = new DevExpress.XtraEditors.TextEdit();
-            this.labelControl25 = new DevExpress.XtraEditors.LabelControl();
-            this.txtConnecttionType_CodePay = new DevExpress.XtraEditors.DropDownButton();
-            this.labelControl24 = new DevExpress.XtraEditors.LabelControl();
             this.labelControl23 = new DevExpress.XtraEditors.LabelControl();
             this.ddUsingSystemCredit = new DevExpress.XtraEditors.DropDownButton();
             this.groupBox6 = new System.Windows.Forms.GroupBox();
@@ -88,18 +79,24 @@ namespace NailsChekin.Popup
             this.chkSigOnPaper = new System.Windows.Forms.CheckBox();
             this.chkTipsOff = new System.Windows.Forms.CheckBox();
             this.label6 = new System.Windows.Forms.Label();
+            this.gbCodepaySetting = new System.Windows.Forms.GroupBox();
+            this.txtCodePayMerchantOrderNo = new DevExpress.XtraEditors.TextEdit();
+            this.labelControl4 = new DevExpress.XtraEditors.LabelControl();
+            this.txtCodePayAppId = new DevExpress.XtraEditors.TextEdit();
+            this.labelControl2 = new DevExpress.XtraEditors.LabelControl();
+            this.txtCodePayIPAddress = new DevExpress.XtraEditors.TextEdit();
+            this.labelControl25 = new DevExpress.XtraEditors.LabelControl();
+            this.txtConnecttionType_CodePay = new DevExpress.XtraEditors.DropDownButton();
+            this.labelControl24 = new DevExpress.XtraEditors.LabelControl();
             this.lbTitle = new System.Windows.Forms.Label();
             this.btnClose = new DevExpress.XtraEditors.SvgImageBox();
             this.btnLogout = new NailsChekin.MyControls.ButtonRound();
+            this.chkUsingAPIV2 = new System.Windows.Forms.CheckBox();
             ((System.ComponentModel.ISupportInitialize)(this.textEdit1.Properties)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.textEdit2.Properties)).BeginInit();
             this.panelContent.SuspendLayout();
             this.panelControls.SuspendLayout();
             this.groupBox1.SuspendLayout();
-            this.gbCodepaySetting.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayMerchantOrderNo.Properties)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayAppId.Properties)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayIPAddress.Properties)).BeginInit();
             this.groupBox6.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.txtPairingCode.Properties)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.txtTaxPercent.Properties)).BeginInit();
@@ -110,6 +107,10 @@ namespace NailsChekin.Popup
             ((System.ComponentModel.ISupportInitialize)(this.txtSurCharge_percent.Properties)).BeginInit();
             this.gbCloverSetting.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.txtCloverIPAddress.Properties)).BeginInit();
+            this.gbCodepaySetting.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayMerchantOrderNo.Properties)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayAppId.Properties)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayIPAddress.Properties)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.btnClose)).BeginInit();
             this.SuspendLayout();
             // 
@@ -160,15 +161,16 @@ namespace NailsChekin.Popup
             // groupBox1
             // 
             this.groupBox1.BackColor = System.Drawing.Color.Transparent;
+            this.groupBox1.Controls.Add(this.chkUsingAPIV2);
             this.groupBox1.Controls.Add(this.labelControl6);
             this.groupBox1.Controls.Add(this.chkPincodeOff);
             this.groupBox1.Controls.Add(this.chkPincodeOn);
             this.groupBox1.Font = new System.Drawing.Font("Microsoft Sans Serif", 15.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.groupBox1.Location = new System.Drawing.Point(981, 438);
+            this.groupBox1.Location = new System.Drawing.Point(981, 412);
             this.groupBox1.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.groupBox1.Name = "groupBox1";
             this.groupBox1.Padding = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.groupBox1.Size = new System.Drawing.Size(931, 117);
+            this.groupBox1.Size = new System.Drawing.Size(931, 215);
             this.groupBox1.TabIndex = 170;
             this.groupBox1.TabStop = false;
             this.groupBox1.Text = "System";
@@ -177,7 +179,7 @@ namespace NailsChekin.Popup
             // 
             this.labelControl6.Appearance.Font = new System.Drawing.Font("Tahoma", 14.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.labelControl6.Appearance.Options.UseFont = true;
-            this.labelControl6.Location = new System.Drawing.Point(43, 55);
+            this.labelControl6.Location = new System.Drawing.Point(43, 60);
             this.labelControl6.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.labelControl6.Name = "labelControl6";
             this.labelControl6.Size = new System.Drawing.Size(241, 29);
@@ -188,7 +190,7 @@ namespace NailsChekin.Popup
             // 
             this.chkPincodeOff.AutoSize = true;
             this.chkPincodeOff.Font = new System.Drawing.Font("Microsoft Sans Serif", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.chkPincodeOff.Location = new System.Drawing.Point(545, 47);
+            this.chkPincodeOff.Location = new System.Drawing.Point(545, 52);
             this.chkPincodeOff.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.chkPincodeOff.Name = "chkPincodeOff";
             this.chkPincodeOff.Size = new System.Drawing.Size(90, 35);
@@ -201,7 +203,7 @@ namespace NailsChekin.Popup
             // 
             this.chkPincodeOn.AutoSize = true;
             this.chkPincodeOn.Font = new System.Drawing.Font("Microsoft Sans Serif", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.chkPincodeOn.Location = new System.Drawing.Point(392, 47);
+            this.chkPincodeOn.Location = new System.Drawing.Point(392, 52);
             this.chkPincodeOn.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.chkPincodeOn.Name = "chkPincodeOn";
             this.chkPincodeOn.Size = new System.Drawing.Size(76, 35);
@@ -223,7 +225,7 @@ namespace NailsChekin.Popup
             this.btnFinish.DisabledOverlayText = "Processing...";
             this.btnFinish.Font = new System.Drawing.Font("Microsoft Sans Serif", 28F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.btnFinish.Location = new System.Drawing.Point(981, 658);
-            this.btnFinish.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnFinish.Margin = new System.Windows.Forms.Padding(4);
             this.btnFinish.MinimumSize = new System.Drawing.Size(160, 44);
             this.btnFinish.Name = "btnFinish";
             this.btnFinish.Selected = false;
@@ -254,115 +256,6 @@ namespace NailsChekin.Popup
             this.ddCreditCardDevice.Name = "ddCreditCardDevice";
             this.ddCreditCardDevice.Size = new System.Drawing.Size(440, 57);
             this.ddCreditCardDevice.TabIndex = 88;
-            // 
-            // gbCodepaySetting
-            // 
-            this.gbCodepaySetting.BackColor = System.Drawing.Color.Transparent;
-            this.gbCodepaySetting.Controls.Add(this.txtCodePayMerchantOrderNo);
-            this.gbCodepaySetting.Controls.Add(this.labelControl4);
-            this.gbCodepaySetting.Controls.Add(this.txtCodePayAppId);
-            this.gbCodepaySetting.Controls.Add(this.labelControl2);
-            this.gbCodepaySetting.Controls.Add(this.txtCodePayIPAddress);
-            this.gbCodepaySetting.Controls.Add(this.labelControl25);
-            this.gbCodepaySetting.Controls.Add(this.txtConnecttionType_CodePay);
-            this.gbCodepaySetting.Controls.Add(this.labelControl24);
-            this.gbCodepaySetting.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.gbCodepaySetting.Location = new System.Drawing.Point(9, 130);
-            this.gbCodepaySetting.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
-            this.gbCodepaySetting.Name = "gbCodepaySetting";
-            this.gbCodepaySetting.Padding = new System.Windows.Forms.Padding(4, 4, 4, 4);
-            this.gbCodepaySetting.Size = new System.Drawing.Size(931, 358);
-            this.gbCodepaySetting.TabIndex = 86;
-            this.gbCodepaySetting.TabStop = false;
-            this.gbCodepaySetting.Text = "CodePay Setting";
-            this.gbCodepaySetting.Visible = false;
-            // 
-            // txtCodePayMerchantOrderNo
-            // 
-            this.txtCodePayMerchantOrderNo.EditValue = "";
-            this.txtCodePayMerchantOrderNo.Location = new System.Drawing.Point(193, 262);
-            this.txtCodePayMerchantOrderNo.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.txtCodePayMerchantOrderNo.Name = "txtCodePayMerchantOrderNo";
-            this.txtCodePayMerchantOrderNo.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.txtCodePayMerchantOrderNo.Properties.Appearance.Options.UseFont = true;
-            this.txtCodePayMerchantOrderNo.Size = new System.Drawing.Size(712, 40);
-            this.txtCodePayMerchantOrderNo.TabIndex = 64;
-            // 
-            // labelControl4
-            // 
-            this.labelControl4.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelControl4.Appearance.Options.UseFont = true;
-            this.labelControl4.Location = new System.Drawing.Point(11, 272);
-            this.labelControl4.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.labelControl4.Name = "labelControl4";
-            this.labelControl4.Size = new System.Drawing.Size(168, 24);
-            this.labelControl4.TabIndex = 63;
-            this.labelControl4.Text = "Merchant Order No";
-            // 
-            // txtCodePayAppId
-            // 
-            this.txtCodePayAppId.EditValue = "wzbb77f4a64a0885ca";
-            this.txtCodePayAppId.Location = new System.Drawing.Point(193, 194);
-            this.txtCodePayAppId.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.txtCodePayAppId.Name = "txtCodePayAppId";
-            this.txtCodePayAppId.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.txtCodePayAppId.Properties.Appearance.Options.UseFont = true;
-            this.txtCodePayAppId.Size = new System.Drawing.Size(712, 40);
-            this.txtCodePayAppId.TabIndex = 62;
-            // 
-            // labelControl2
-            // 
-            this.labelControl2.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelControl2.Appearance.Options.UseFont = true;
-            this.labelControl2.Location = new System.Drawing.Point(11, 197);
-            this.labelControl2.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.labelControl2.Name = "labelControl2";
-            this.labelControl2.Size = new System.Drawing.Size(61, 24);
-            this.labelControl2.TabIndex = 61;
-            this.labelControl2.Text = "App ID";
-            // 
-            // txtCodePayIPAddress
-            // 
-            this.txtCodePayIPAddress.EditValue = "ws://192.168.1.147:35779";
-            this.txtCodePayIPAddress.Location = new System.Drawing.Point(193, 130);
-            this.txtCodePayIPAddress.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.txtCodePayIPAddress.Name = "txtCodePayIPAddress";
-            this.txtCodePayIPAddress.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.txtCodePayIPAddress.Properties.Appearance.Options.UseFont = true;
-            this.txtCodePayIPAddress.Size = new System.Drawing.Size(712, 40);
-            this.txtCodePayIPAddress.TabIndex = 60;
-            // 
-            // labelControl25
-            // 
-            this.labelControl25.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelControl25.Appearance.Options.UseFont = true;
-            this.labelControl25.Location = new System.Drawing.Point(7, 140);
-            this.labelControl25.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.labelControl25.Name = "labelControl25";
-            this.labelControl25.Size = new System.Drawing.Size(94, 24);
-            this.labelControl25.TabIndex = 59;
-            this.labelControl25.Text = "IP Address";
-            // 
-            // txtConnecttionType_CodePay
-            // 
-            this.txtConnecttionType_CodePay.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.txtConnecttionType_CodePay.Appearance.Options.UseFont = true;
-            this.txtConnecttionType_CodePay.Location = new System.Drawing.Point(193, 62);
-            this.txtConnecttionType_CodePay.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.txtConnecttionType_CodePay.Name = "txtConnecttionType_CodePay";
-            this.txtConnecttionType_CodePay.Size = new System.Drawing.Size(712, 41);
-            this.txtConnecttionType_CodePay.TabIndex = 58;
-            // 
-            // labelControl24
-            // 
-            this.labelControl24.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.labelControl24.Appearance.Options.UseFont = true;
-            this.labelControl24.Location = new System.Drawing.Point(11, 79);
-            this.labelControl24.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.labelControl24.Name = "labelControl24";
-            this.labelControl24.Size = new System.Drawing.Size(44, 24);
-            this.labelControl24.TabIndex = 57;
-            this.labelControl24.Text = "Type";
             // 
             // labelControl23
             // 
@@ -525,7 +418,7 @@ namespace NailsChekin.Popup
             // txtReceiptFooter
             // 
             this.txtReceiptFooter.Location = new System.Drawing.Point(19, 149);
-            this.txtReceiptFooter.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.txtReceiptFooter.Margin = new System.Windows.Forms.Padding(4);
             this.txtReceiptFooter.Multiline = true;
             this.txtReceiptFooter.Name = "txtReceiptFooter";
             this.txtReceiptFooter.Size = new System.Drawing.Size(899, 95);
@@ -578,7 +471,7 @@ namespace NailsChekin.Popup
             this.groupBox9.Controls.Add(this.txtSurCharge_percent);
             this.groupBox9.Controls.Add(this.labelControl11);
             this.groupBox9.Font = new System.Drawing.Font("Microsoft Sans Serif", 15.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.groupBox9.Location = new System.Drawing.Point(981, 249);
+            this.groupBox9.Location = new System.Drawing.Point(981, 237);
             this.groupBox9.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.groupBox9.Name = "groupBox9";
             this.groupBox9.Padding = new System.Windows.Forms.Padding(3, 2, 3, 2);
@@ -591,7 +484,7 @@ namespace NailsChekin.Popup
             // 
             this.ddlSurChargeUnit.EditValue = "%";
             this.ddlSurChargeUnit.Location = new System.Drawing.Point(159, 98);
-            this.ddlSurChargeUnit.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.ddlSurChargeUnit.Margin = new System.Windows.Forms.Padding(4);
             this.ddlSurChargeUnit.Name = "ddlSurChargeUnit";
             this.ddlSurChargeUnit.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.ddlSurChargeUnit.Properties.Appearance.Options.UseFont = true;
@@ -722,7 +615,7 @@ namespace NailsChekin.Popup
             this.btnPairCloverDevice.DisabledOverlayText = "Processing...";
             this.btnPairCloverDevice.Font = new System.Drawing.Font("Microsoft Sans Serif", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.btnPairCloverDevice.Location = new System.Drawing.Point(491, 274);
-            this.btnPairCloverDevice.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnPairCloverDevice.Margin = new System.Windows.Forms.Padding(4);
             this.btnPairCloverDevice.MinimumSize = new System.Drawing.Size(160, 44);
             this.btnPairCloverDevice.Name = "btnPairCloverDevice";
             this.btnPairCloverDevice.Selected = false;
@@ -843,6 +736,115 @@ namespace NailsChekin.Popup
             this.label6.TabIndex = 47;
             this.label6.Text = "Signature Location";
             // 
+            // gbCodepaySetting
+            // 
+            this.gbCodepaySetting.BackColor = System.Drawing.Color.Transparent;
+            this.gbCodepaySetting.Controls.Add(this.txtCodePayMerchantOrderNo);
+            this.gbCodepaySetting.Controls.Add(this.labelControl4);
+            this.gbCodepaySetting.Controls.Add(this.txtCodePayAppId);
+            this.gbCodepaySetting.Controls.Add(this.labelControl2);
+            this.gbCodepaySetting.Controls.Add(this.txtCodePayIPAddress);
+            this.gbCodepaySetting.Controls.Add(this.labelControl25);
+            this.gbCodepaySetting.Controls.Add(this.txtConnecttionType_CodePay);
+            this.gbCodepaySetting.Controls.Add(this.labelControl24);
+            this.gbCodepaySetting.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.gbCodepaySetting.Location = new System.Drawing.Point(9, 130);
+            this.gbCodepaySetting.Margin = new System.Windows.Forms.Padding(4);
+            this.gbCodepaySetting.Name = "gbCodepaySetting";
+            this.gbCodepaySetting.Padding = new System.Windows.Forms.Padding(4);
+            this.gbCodepaySetting.Size = new System.Drawing.Size(931, 358);
+            this.gbCodepaySetting.TabIndex = 86;
+            this.gbCodepaySetting.TabStop = false;
+            this.gbCodepaySetting.Text = "CodePay Setting";
+            this.gbCodepaySetting.Visible = false;
+            // 
+            // txtCodePayMerchantOrderNo
+            // 
+            this.txtCodePayMerchantOrderNo.EditValue = "";
+            this.txtCodePayMerchantOrderNo.Location = new System.Drawing.Point(193, 262);
+            this.txtCodePayMerchantOrderNo.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.txtCodePayMerchantOrderNo.Name = "txtCodePayMerchantOrderNo";
+            this.txtCodePayMerchantOrderNo.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.txtCodePayMerchantOrderNo.Properties.Appearance.Options.UseFont = true;
+            this.txtCodePayMerchantOrderNo.Size = new System.Drawing.Size(712, 40);
+            this.txtCodePayMerchantOrderNo.TabIndex = 64;
+            // 
+            // labelControl4
+            // 
+            this.labelControl4.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelControl4.Appearance.Options.UseFont = true;
+            this.labelControl4.Location = new System.Drawing.Point(11, 272);
+            this.labelControl4.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.labelControl4.Name = "labelControl4";
+            this.labelControl4.Size = new System.Drawing.Size(168, 24);
+            this.labelControl4.TabIndex = 63;
+            this.labelControl4.Text = "Merchant Order No";
+            // 
+            // txtCodePayAppId
+            // 
+            this.txtCodePayAppId.EditValue = "wzbb77f4a64a0885ca";
+            this.txtCodePayAppId.Location = new System.Drawing.Point(193, 194);
+            this.txtCodePayAppId.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.txtCodePayAppId.Name = "txtCodePayAppId";
+            this.txtCodePayAppId.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.txtCodePayAppId.Properties.Appearance.Options.UseFont = true;
+            this.txtCodePayAppId.Size = new System.Drawing.Size(712, 40);
+            this.txtCodePayAppId.TabIndex = 62;
+            // 
+            // labelControl2
+            // 
+            this.labelControl2.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelControl2.Appearance.Options.UseFont = true;
+            this.labelControl2.Location = new System.Drawing.Point(11, 197);
+            this.labelControl2.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.labelControl2.Name = "labelControl2";
+            this.labelControl2.Size = new System.Drawing.Size(61, 24);
+            this.labelControl2.TabIndex = 61;
+            this.labelControl2.Text = "App ID";
+            // 
+            // txtCodePayIPAddress
+            // 
+            this.txtCodePayIPAddress.EditValue = "ws://192.168.1.147:35779";
+            this.txtCodePayIPAddress.Location = new System.Drawing.Point(193, 130);
+            this.txtCodePayIPAddress.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.txtCodePayIPAddress.Name = "txtCodePayIPAddress";
+            this.txtCodePayIPAddress.Properties.Appearance.Font = new System.Drawing.Font("Tahoma", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.txtCodePayIPAddress.Properties.Appearance.Options.UseFont = true;
+            this.txtCodePayIPAddress.Size = new System.Drawing.Size(712, 40);
+            this.txtCodePayIPAddress.TabIndex = 60;
+            // 
+            // labelControl25
+            // 
+            this.labelControl25.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelControl25.Appearance.Options.UseFont = true;
+            this.labelControl25.Location = new System.Drawing.Point(7, 140);
+            this.labelControl25.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.labelControl25.Name = "labelControl25";
+            this.labelControl25.Size = new System.Drawing.Size(94, 24);
+            this.labelControl25.TabIndex = 59;
+            this.labelControl25.Text = "IP Address";
+            // 
+            // txtConnecttionType_CodePay
+            // 
+            this.txtConnecttionType_CodePay.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.txtConnecttionType_CodePay.Appearance.Options.UseFont = true;
+            this.txtConnecttionType_CodePay.Location = new System.Drawing.Point(193, 62);
+            this.txtConnecttionType_CodePay.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.txtConnecttionType_CodePay.Name = "txtConnecttionType_CodePay";
+            this.txtConnecttionType_CodePay.Size = new System.Drawing.Size(712, 41);
+            this.txtConnecttionType_CodePay.TabIndex = 58;
+            // 
+            // labelControl24
+            // 
+            this.labelControl24.Appearance.Font = new System.Drawing.Font("Tahoma", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelControl24.Appearance.Options.UseFont = true;
+            this.labelControl24.Location = new System.Drawing.Point(11, 79);
+            this.labelControl24.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.labelControl24.Name = "labelControl24";
+            this.labelControl24.Size = new System.Drawing.Size(44, 24);
+            this.labelControl24.TabIndex = 57;
+            this.labelControl24.Text = "Type";
+            // 
             // lbTitle
             // 
             this.lbTitle.AutoSize = true;
@@ -861,7 +863,7 @@ namespace NailsChekin.Popup
             // 
             this.btnClose.Cursor = System.Windows.Forms.Cursors.Hand;
             this.btnClose.Location = new System.Drawing.Point(1908, 7);
-            this.btnClose.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnClose.Margin = new System.Windows.Forms.Padding(4);
             this.btnClose.Name = "btnClose";
             this.btnClose.Size = new System.Drawing.Size(63, 62);
             this.btnClose.SizeMode = DevExpress.XtraEditors.SvgImageSizeMode.Stretch;
@@ -883,7 +885,7 @@ namespace NailsChekin.Popup
             this.btnLogout.DisabledOverlayText = "Processing...";
             this.btnLogout.Font = new System.Drawing.Font("Microsoft Sans Serif", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.btnLogout.Location = new System.Drawing.Point(1668, 9);
-            this.btnLogout.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnLogout.Margin = new System.Windows.Forms.Padding(4);
             this.btnLogout.MinimumSize = new System.Drawing.Size(160, 44);
             this.btnLogout.Name = "btnLogout";
             this.btnLogout.Selected = false;
@@ -894,11 +896,23 @@ namespace NailsChekin.Popup
             this.btnLogout.TitleFontSize = 16F;
             this.btnLogout.Click += new System.EventHandler(this.btnLogout_Click);
             // 
+            // chkUsingAPIV2
+            // 
+            this.chkUsingAPIV2.AutoSize = true;
+            this.chkUsingAPIV2.Font = new System.Drawing.Font("Microsoft Sans Serif", 16F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.chkUsingAPIV2.Location = new System.Drawing.Point(43, 128);
+            this.chkUsingAPIV2.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.chkUsingAPIV2.Name = "chkUsingAPIV2";
+            this.chkUsingAPIV2.Size = new System.Drawing.Size(259, 35);
+            this.chkUsingAPIV2.TabIndex = 94;
+            this.chkUsingAPIV2.Text = "Using New API V2";
+            this.chkUsingAPIV2.UseVisualStyleBackColor = true;
+            // 
             // FormSetting
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1995, 964);
+            this.ClientSize = new System.Drawing.Size(1942, 964);
             this.Controls.Add(this.btnLogout);
             this.Controls.Add(this.btnClose);
             this.Controls.Add(this.lbTitle);
@@ -920,11 +934,6 @@ namespace NailsChekin.Popup
             this.panelControls.PerformLayout();
             this.groupBox1.ResumeLayout(false);
             this.groupBox1.PerformLayout();
-            this.gbCodepaySetting.ResumeLayout(false);
-            this.gbCodepaySetting.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayMerchantOrderNo.Properties)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayAppId.Properties)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayIPAddress.Properties)).EndInit();
             this.groupBox6.ResumeLayout(false);
             this.groupBox6.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.txtPairingCode.Properties)).EndInit();
@@ -939,6 +948,11 @@ namespace NailsChekin.Popup
             this.gbCloverSetting.ResumeLayout(false);
             this.gbCloverSetting.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.txtCloverIPAddress.Properties)).EndInit();
+            this.gbCodepaySetting.ResumeLayout(false);
+            this.gbCodepaySetting.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayMerchantOrderNo.Properties)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayAppId.Properties)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.txtCodePayIPAddress.Properties)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.btnClose)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
@@ -1007,5 +1021,6 @@ namespace NailsChekin.Popup
         private System.Windows.Forms.RadioButton chkPincodeOff;
         private System.Windows.Forms.RadioButton chkPincodeOn;
         private DevExpress.XtraEditors.LabelControl labelControl13;
+        private System.Windows.Forms.CheckBox chkUsingAPIV2;
     }
 }

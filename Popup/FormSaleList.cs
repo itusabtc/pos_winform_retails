@@ -66,7 +66,7 @@ namespace NailsChekin.Popup
 
             if (this.status.Equals("0"))
             {
-                txtFromDate.Text = DateTime.Now.ToString("MM-01-yyyy");
+                txtFromDate.Text = DateTime.Now.ToString("MM-dd-yyyy");
                 txtToDate.Text = DateTime.Now.ToString("MM-dd-yyyy");
 
                 SetupCombineButtons();   // chỉ SALE OPEN mới có combine

@@ -179,6 +179,8 @@ namespace NailsChekin.Popup
             // Receipt Print Setting
             chkReceiptCusCheckin.Checked    = Utilitys.GetConfig("chkReceiptCusCheckin",    false);
             chkShowPopupConfirmBill.Checked = Utilitys.GetConfig("chkShowPopupConfirmBill", false);
+            txtReceiptFooter.Text           = Utilitys.GetConfig("receiptFooter", Constants.receiptFooter ?? "");
+            Constants.receiptFooter         = txtReceiptFooter.Text;
 
             // Pairing Code
             txtPairingCode.Text = Utilitys.GetConfig("pairing_code", "");
@@ -197,10 +199,15 @@ namespace NailsChekin.Popup
             chkPincodeOn.Checked = Utilitys.GetConfig("chkPincodeOn", false);
             chkPincodeOff.Checked = Utilitys.GetConfig("chkPincodeOff", true);
 
+            //Using New API V2 (mặc định không tick)
+            chkUsingAPIV2.Checked = Utilitys.GetConfig("chkUsingAPIV2", false);
+
 
         }
 
-        // Gọi API trên background thread — không block UI thread
+        // Gọi API trên background thread — không block UI thread.
+        // Credit: sync từ server.
+        // TAX + Footer: giữ giá trị local đã LoadLocalConfig (đã Save) — không để server đè lại.
         private async Task UpdateSettingFromAPIAsync()
         {
             string responce = await Task.Run(() => Utilitys.CALL_API("Store/getStoreSetting", "", "GET", true));
@@ -208,7 +215,6 @@ namespace NailsChekin.Popup
 
             if (!responce.StartsWith("Error"))
             {
-                // Parse JSON 1 lần duy nhất trên background thread
                 var (creditOn, taxOn, taxPct, footer) = await Task.Run(() =>
                 {
                     var jObj = JObject.Parse(responce);
@@ -222,17 +228,27 @@ namespace NailsChekin.Popup
                 if (this.IsDisposed) return;
 
                 Constants.using_system_credit = creditOn.Equals("1") ? "ON" : "OFF";
-                Constants.tax_percent         = taxPct;
-                Constants.chkTaxOn            = taxOn.Equals("1");
-                Constants.chkTaxOff           = !taxOn.Equals("1");
-                Constants.receiptFooter       = footer;
-            }
 
-            // Cập nhật UI với giá trị mới từ server
-            chkTaxOn.Checked      = Constants.chkTaxOn;
-            chkTaxOff.Checked     = Constants.chkTaxOff;
-            txtTaxPercent.Text    = Constants.tax_percent;
-            txtReceiptFooter.Text = Constants.receiptFooter;
+                // Chỉ seed TAX từ API khi local chưa từng lưu tax_percent
+                string localTaxRaw = Utilitys.RedConfig("tax_percent");
+                if (string.IsNullOrWhiteSpace(localTaxRaw))
+                {
+                    Constants.tax_percent = taxPct;
+                    Constants.chkTaxOn    = taxOn.Equals("1");
+                    Constants.chkTaxOff   = !taxOn.Equals("1");
+                    chkTaxOn.Checked      = Constants.chkTaxOn;
+                    chkTaxOff.Checked     = Constants.chkTaxOff;
+                    txtTaxPercent.Text    = Constants.tax_percent;
+                }
+
+                // Chỉ seed Footer từ API khi local chưa từng lưu receiptFooter
+                string localFooterRaw = Utilitys.RedConfig("receiptFooter");
+                if (string.IsNullOrWhiteSpace(localFooterRaw))
+                {
+                    Constants.receiptFooter = footer;
+                    txtReceiptFooter.Text   = Constants.receiptFooter;
+                }
+            }
         }
 
         private void Adjust_Screen()
@@ -288,7 +304,11 @@ namespace NailsChekin.Popup
 
         private async void btnFinish_Click(object sender, EventArgs e)
         {
-            // Lưu vào Constants
+            // Cờ "Using New API V2" đổi -> token 2 API khác nhau -> BẮT BUỘC logout/login lại.
+            bool apiV2Changed = Constants.usingNewAPIV2 != chkUsingAPIV2.Checked;
+            bool newApiV2 = chkUsingAPIV2.Checked;
+
+            // Lưu vào Constants (chưa flip usingNewAPIV2 — push lên host HIỆN TẠI trước).
             Constants.credit_card_device      = ddCreditCardDevice.Text;
             Constants.chkTipsOn               = chkTipsOn.Checked;
             Constants.chkTipsOff              = chkTipsOff.Checked;
@@ -303,10 +323,13 @@ namespace NailsChekin.Popup
             Constants.using_system_credit     = ddUsingSystemCredit.Text;
             Constants.chkTaxOn                = chkTaxOn.Checked;
             Constants.chkTaxOff               = chkTaxOff.Checked;
-            Constants.tax_percent             = txtTaxPercent.Text;
+            Constants.tax_percent             = (txtTaxPercent.Text ?? "").Trim();
             Constants.chkReceiptCusCheckin    = chkReceiptCusCheckin.Checked;
             Constants.chkShowPopupConfirmBill = chkShowPopupConfirmBill.Checked;
-            Constants.receiptFooter           = txtReceiptFooter.Text;
+            Constants.receiptFooter           = (txtReceiptFooter.Text ?? "")
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
             Constants.pairing_code            = txtPairingCode.Text;
             Constants.printer_name            = ddPrinterList.Text;
             Constants.chkSurChargeOn          = chkSurChargeOn.Checked;
@@ -316,6 +339,12 @@ namespace NailsChekin.Popup
             Constants.surCharge_unit          = ddlSurChargeUnit.Text;
             Constants.chkPincodeOn = chkPincodeOn.Checked;
             Constants.chkPincodeOff = chkPincodeOff.Checked;
+
+            // Snapshot TAX + Footer vừa Save — giữ sau InitConfig dù API còn giá trị cũ.
+            string savedTaxPercent = Constants.tax_percent;
+            bool savedTaxOn = Constants.chkTaxOn;
+            bool savedTaxOff = Constants.chkTaxOff;
+            string savedReceiptFooter = Constants.receiptFooter;
 
             // Tạo thư mục config nếu chưa có
             Utilitys.CreateForderConfig();
@@ -359,29 +388,80 @@ namespace NailsChekin.Popup
             sb.AppendLine("receiptFooter: "            + Constants.receiptFooter);
             sb.AppendLine("pairing_code: "             + Constants.pairing_code);
             sb.AppendLine("printer_name: "             + Constants.printer_name);
+            sb.AppendLine("chkUsingAPIV2: "            + newApiV2);
 
             Utilitys.SaveAllConfig(sb.ToString());
 
-            // Gửi setting lên server trên background thread — không block UI
-            string jData = "{ "
-                + " 'isDefault':'1',"
-                + " 'using_system_credit':'" + (Constants.using_system_credit.Equals("OFF") ? "0" : "1") + "',"
-                + " 'taxValue':'" + (Constants.chkTaxOn ? Constants.tax_percent : "0") + "',"
-                + " 'receiptFooter':'" + Constants.receiptFooter + "'"
-                + " }";
-
-            await Task.Run(() => Utilitys.CALL_API("Store/updateStoreSetting", jData, "POST", true));
+            // Đẩy TAX lên host HIỆN TẠI (token còn hợp lệ) TRƯỚC khi flip API V2 / logout.
+            bool pushed = await PushStoreSettingToServerAsync();
             if (this.IsDisposed) return;
+            if (!pushed)
+            {
+                MessageBox.Show(
+                    "Đã lưu TAX trên máy này (" + savedTaxPercent + "%).\nKhông đẩy được lên server — kiểm tra mạng/token.\nGiá trị trên máy vẫn giữ theo lần Save này.",
+                    "Cảnh báo đồng bộ server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            Constants.usingNewAPIV2 = newApiV2;
+
+            // Đổi cờ "Using New API V2" -> host + token khác nhau giữa 2 API.
+            // Token cũ không còn hợp lệ với host mới -> logout/restart để login lại.
+            if (apiV2Changed)
+            {
+                MessageBox.Show(
+                    "Đã thay đổi \"Using New API V2\".\nỨng dụng sẽ đăng xuất và khởi động lại để đăng nhập lại.",
+                    "Cần đăng nhập lại", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LogoutAndRestart();
+                return;
+            }
 
             // Đóng form trước — tránh FormSetting bị đơ trong khi chờ device connect
             this.parentForm.isCodePaySocketConnect = false;
             this.parentForm.setTileNavPane1_Default();
             this.parentForm.InitConfig();
+
+            // Giữ TAX + Footer vừa Save (phòng API vẫn trả giá trị cũ).
+            Constants.tax_percent = savedTaxPercent;
+            Constants.chkTaxOn = savedTaxOn;
+            Constants.chkTaxOff = savedTaxOff;
+            Constants.receiptFooter = savedReceiptFooter;
+            this.parentForm.SetTaxInfo(
+                Core.TAX_PERCENT(),
+                savedTaxOn && Core.TAX_PERCENT() > 0);
+
             this.Close();
 
             // re_connect: true → disconnect old Clover/_codePay trước, rồi init lại
             // Fire-and-forget có kiểm soát: Close() đã xong, parentForm vẫn còn sống
             _ = this.parentForm.InitializeCreditDeviceConnector_Async(re_connect: true);
+        }
+
+        /// <summary>
+        /// Đồng bộ TAX + credit + receipt footer lên Store/updateStoreSetting.
+        /// taxValue: % khi Tax On, "0" khi Off (tương thích API cũ).
+        /// tax_percent: luôn gửi % đã nhập để server giữ đúng mức thuế (vd 8.25) khi Off/On lại.
+        /// tax_setting_on: 1/0.
+        /// Trả true nếu API không báo Error.
+        /// </summary>
+        private async Task<bool> PushStoreSettingToServerAsync()
+        {
+            string taxPercent = (Constants.tax_percent ?? "").Trim();
+            if (string.IsNullOrEmpty(taxPercent))
+                taxPercent = "0";
+
+            string receiptFooter = (Constants.receiptFooter ?? "").Replace("'", "").Replace("\r", " ").Replace("\n", " ");
+
+            string jData = "{ "
+                + " 'isDefault':'1',"
+                + " 'using_system_credit':'" + (Constants.using_system_credit.Equals("OFF") ? "0" : "1") + "',"
+                + " 'taxValue':'" + (Constants.chkTaxOn ? taxPercent : "0") + "',"
+                + " 'tax_percent':'" + taxPercent + "',"
+                + " 'tax_setting_on':'" + (Constants.chkTaxOn ? "1" : "0") + "',"
+                + " 'receiptFooter':'" + receiptFooter + "'"
+                + " }";
+
+            string responce = await Task.Run(() => Utilitys.CALL_API("Store/updateStoreSetting", jData, "POST", true));
+            return responce == null || !responce.StartsWith("Error");
         }
 
         private void btnClose_Click(object sender, EventArgs e)
@@ -791,6 +871,13 @@ namespace NailsChekin.Popup
 
         private static bool _isRestarting;
         private void btnLogout_Click(object sender, EventArgs e)
+        {
+            LogoutAndRestart();
+        }
+
+        // Xoá token đăng nhập (store config) rồi restart app để login lại.
+        // Dùng chung cho nút Logout và khi đổi cờ "Using New API V2" (token 2 API khác nhau).
+        private void LogoutAndRestart()
         {
             // 1) Lưu config
             //Save To File

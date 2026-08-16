@@ -182,7 +182,7 @@ namespace NailsChekin.Models.Reports
             return number_items;
         }
 
-        // Thêm 1 dòng "TOTAL AMOUNT RETURN" màu đỏ dưới bảng totals.
+        // Thêm dòng "TOTAL AMOUNT RETURN" (đỏ) + "TOTAL AFTER RETURN" (đen) dưới bảng totals.
         // returnTotal = tổng tiền hàng đã hoàn + thuế phân bổ (theo tỉ lệ tax/subtotal của đơn).
         public static void AddReturnTotalRow(XRTable totalsTable, double refundedSubtotal, JObject totals)
         {
@@ -194,26 +194,46 @@ namespace NailsChekin.Models.Reports
             double returnTotal = Math.Round(refundedSubtotal * (1 + rate), 2);
             if (returnTotal <= 0) return;
 
+            totalsTable.Rows.Add(BuildTotalRow(
+                "TOTAL AMOUNT RETURN",
+                "-$" + returnTotal.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                System.Drawing.Color.Red));
+
+            // TOTAL còn lại sau refund = TOTAL của đơn - tổng tiền hoàn (không âm)
+            double ordTotal = ParseNum(totals != null && totals["TOTAL"] != null ? totals["TOTAL"].ToString() : "");
+            if (ordTotal > 0)
+            {
+                double afterReturn = Math.Max(0, Math.Round(ordTotal - returnTotal, 2));
+                totalsTable.Rows.Add(BuildTotalRow(
+                    "TOTAL AFTER RETURN",
+                    "$" + afterReturn.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                    System.Drawing.Color.Black));
+            }
+        }
+
+        // Dựng 1 dòng totals (title trái, value phải) cùng font/weight với total_title / total_lable.
+        private static XRTableRow BuildTotalRow(string title, string value, System.Drawing.Color color)
+        {
             var row = new XRTableRow();
             row.Weight = 1D;
 
             var titleCell = new XRTableCell();
-            titleCell.Text = "TOTAL AMOUNT RETURN";
+            titleCell.Text = title;
             titleCell.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
-            titleCell.ForeColor = System.Drawing.Color.Red;
+            titleCell.ForeColor = color;
             titleCell.Multiline = true;
             titleCell.Weight = 1.4093352534058872D;   // khớp total_title
 
             var valueCell = new XRTableCell();
-            valueCell.Text = "-$" + returnTotal.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            valueCell.Text = value;
             valueCell.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
-            valueCell.ForeColor = System.Drawing.Color.Red;
+            valueCell.ForeColor = color;
             valueCell.Multiline = true;
             valueCell.TextAlignment = DevExpress.XtraPrinting.TextAlignment.TopRight;
             valueCell.Weight = 0.59066474659411283D;  // khớp total_lable
 
             row.Cells.AddRange(new XRTableCell[] { titleCell, valueCell });
-            totalsTable.Rows.Add(row);
+            return row;
         }
 
         // Parse chuỗi tiền ("$77", "5.64", "") -> double

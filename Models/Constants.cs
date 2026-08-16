@@ -23,8 +23,14 @@ namespace NailsChekin.Models
 
         //Printer Config
 
-        //public static string hostName = "api-retails.nailsbeautysupply.com";
-        public static string hostName = "178.63.64.96";  //NO CLOUDFARE !!!
+        //public static string hostName = "178.63.64.96";  //NO CLOUDFARE !!!
+
+        // "Using New API V2" (FormSetting): tick ON -> host mới, mặc định OFF -> host cũ.
+        // Load/Save qua config key "chkUsingAPIV2".
+        public static bool usingNewAPIV2 = false;
+        public static string hostName => usingNewAPIV2
+            ? "http://178.63.64.96:8082"
+            : "http://178.63.64.96:8088";
 
         public static string web_print_filePath = "C:\\POSLogs\\Printer\\";
         public static string web_print_acrobatURL = @"C:\Program Files (x86)\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe";
@@ -48,7 +54,10 @@ namespace NailsChekin.Models
         public static string update_manifest_url = "http://178.63.64.96:8089/pos-update/version.json";
 
         //Login backoffice
-        public static string backoffice_url = "https://bo-retails.nailsbeautysupply.com/";
+        // Đổi theo cờ "Using New API V2": tick ON -> backoffice mới, OFF -> backoffice cũ.
+        public static string backoffice_url => usingNewAPIV2
+            ? "https://admin.antpayai.com/"
+            : "https://bo-retails.nailsbeautysupply.com/";
         public static string backoffice_tips_url = "https://tips.nailspaofamerica.com/";
         public static string buy_supply_url = "https://admin.skynailsupply.com/";
 

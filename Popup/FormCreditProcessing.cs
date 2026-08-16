@@ -48,16 +48,21 @@ namespace NailsChekin.Popup
             lbMessage.Text = "";
         }
 
-        private void svgImageBox1_Click(object sender, EventArgs e)
+        private async void svgImageBox1_Click(object sender, EventArgs e)
         {
             try
             {
                 FormMain main = this.parentForm;
+                this.is_cancel_from_pos = true;
 
                 // merchant_order_no đang dùng để thu tiền nằm ở curent_order_payment_id
                 // (KHÔNG phải curent_order_local_payment_id - field đó chỉ được set khi load lại
                 //  sale item, nên lúc đang payment nó rỗng/giá trị cũ => trước đây X không hủy được).
                 string merchant_order_no = main?.curent_order_payment_id;
+
+                // User cố ý đóng Processing → KHÔNG auto-resume khi P5 reconnect.
+                // Chỉ khi bấm Charge lại (MarkP5PaymentPending mới) mới vào lại quy trình Resume.
+                main?.ClearP5PaymentPending(merchant_order_no);
 
                 // Chỉ gửi lệnh hủy cho máy CodePay P5 (bỏ qua Clover).
                 // T2 dùng cơ chế hủy riêng (qua socket / _pendingT2MerchantOrderNo) nên không xử lý ở đây.
@@ -69,11 +74,11 @@ namespace NailsChekin.Popup
 
                 if (isCodePayP5)
                 {
-                    //CANCEL P5 From POS - route theo đúng connection type đang cấu hình
+                    // CANCEL P5 From POS - route theo đúng connection type đang cấu hình
                     P5_CONNECTTION_TYPE connType = P5Lib.Get_P5_ConecttionType_Setting();
 
                     // Gửi hủy ở background để X không bị treo nếu máy không phản hồi; form vẫn đóng ngay.
-                    Task.Run(() =>
+                    _ = Task.Run(async () =>
                     {
                         try
                         {
@@ -84,7 +89,7 @@ namespace NailsChekin.Popup
                                     break;
                                 case P5_CONNECTTION_TYPE.WLAN_LAN:
                                 case P5_CONNECTTION_TYPE.PAIR_MODE:
-                                    CreditCardLib.CODEPAY_WLAN_CANCEL_ORDER(main, merchant_order_no);
+                                    await CreditCardLib.CODEPAY_WLAN_CANCEL_ORDER_ASYNC(main, merchant_order_no);
                                     break;
                                 case P5_CONNECTTION_TYPE.USB:
                                     CreditCardLib.CODEPAY_USB_CANCEL_ORDER(main, merchant_order_no);

@@ -53,6 +53,12 @@ namespace NailsChekin
         public bool selected_ticket_pending_payment = false;
         public string curent_order_local_payment_id = "";
 
+        // P5 charge đã gửi máy nhưng chưa checkout xong (popup Processing có thể đã đóng / socket đứt).
+        // Khi P5 reconnect sẽ resume: query lại hoặc retry POS_CHECKOUT.
+        private string _p5PendingMerchantOrderNo = "";
+        private readonly object _p5PendingLock = new object();
+        private int _p5ResumeInFlight = 0;
+
         public bool waiting_clover_process = false;
         public bool clover_confirm_print = false;
 
@@ -102,6 +108,10 @@ namespace NailsChekin
 
             this.KeyPreview = true; // Quan trọng: form nhận được KeyPress dù đang focus control khác
             this.KeyPress += MainForm_KeyPress;
+            // HID scanner = bàn phím ảo: mất focus (Minimize / mở browser Buy Supply / Windows Search)
+            // → barcode bị gõ ra ngoài POS. Mỗi lần form active lại phải sẵn sàng nhận scan.
+            this.Activated += FormMain_ActivatedForScan;
+            this.Deactivate += FormMain_DeactivateForScan;
         }
 
         private async void Form3_Load(object sender, EventArgs e)
@@ -184,7 +194,14 @@ namespace NailsChekin
             try { CleanupClover(); } catch { }
 
             // Dừng và giải phóng timer barcode reset
-            try { timerBarcodeReset?.Stop(); timerBarcodeReset?.Dispose(); } catch { }
+            try
+            {
+                this.Activated -= FormMain_ActivatedForScan;
+                this.Deactivate -= FormMain_DeactivateForScan;
+                this.KeyPress -= MainForm_KeyPress;
+            }
+            catch { }
+            try { timerBarcodeReset?.Stop(); timerBarcodeReset?.Dispose(); timerBarcodeReset = null; } catch { }
 
             // Giải phóng CancellationTokenSource tab navigation
             try { _cts?.Cancel(); _cts?.Dispose(); _cts = null; } catch { }
@@ -1430,6 +1447,20 @@ namespace NailsChekin
             return "";
         }
 
+        /// <summary>
+        /// Id order gửi lên createUpdateOrder.
+        /// P5 charge ghi đè curent_order_payment_id bằng merchant_order_no random (7 số);
+        /// đơn Open Sale giữ id thật ở curent_order_local_payment_id.
+        /// </summary>
+        private string GetOrderUpdateId()
+        {
+            if (Utilitys.CheckIsNumber(this.curent_order_local_payment_id) && !this.curent_order_local_payment_id.Equals("0"))
+                return this.curent_order_local_payment_id;
+            if (Utilitys.CheckIsNumber(this.curent_order_payment_id))
+                return this.curent_order_payment_id;
+            return "0";
+        }
+
         public bool POS_CHECKOUT(string isCreditCard, List<PaymentModel> paymentList, double total_payment, string isSave = "0")
         {
             try
@@ -1520,7 +1551,7 @@ namespace NailsChekin
                 else
                 {
                     endpoint = "Order/createUpdateOrder";
-                    string order_update_id = Utilitys.CheckIsNumber(this.curent_order_payment_id) ? this.curent_order_payment_id : "0";
+                    string order_update_id = this.GetOrderUpdateId();
                     DATA = @"{
                                   'id': " + order_update_id + @",
                                   'orderDate': '" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + @"',
@@ -1558,11 +1589,14 @@ namespace NailsChekin
                 {
                     CustomMessageBox.Show("Process Ticket Error: " + Environment.NewLine + responce);
                     this.EnableDisableControl(true);
+                    // Giữ _p5PendingMerchantOrderNo để khi P5 reconnect vẫn retry checkout được.
                     return false; // API lỗi -> báo cho caller để rollback tender vừa add (tránh double payment khi bấm lại)
                 }
                 else
                 {
                     string ticketId = responce;
+                    // Checkout OK (complete hoặc hold) → bỏ pending P5.
+                    this.ClearP5PaymentPending();
                     if (isSave.Equals("0"))
                     {
                         bool wasCombine = this.selected_ticket_combine;
@@ -2091,7 +2125,9 @@ namespace NailsChekin
 
                     this.selected_ticket = "";
                     this.curent_order_payment_id = "";
+                    this.curent_order_local_payment_id = "";
                     this.current_clover_token = "";
+                    this.ClearP5PaymentPending();
 
                     this.selected_ticket_combine_id = "";
                     this.selected_ticket_combine = false;
@@ -2971,8 +3007,167 @@ namespace NailsChekin
                 if (msg.Length > 100)
                     msg = msg.Substring(0, 100) + "...";
 
+                // P5 tự reconnect xong -> nếu còn ticket treo (popup đã đóng / checkout chưa xong) thì resume.
+                if (!string.IsNullOrEmpty(msg)
+                    && (msg.IndexOf("Payment terminal server connected", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.Equals("Connected!!", StringComparison.OrdinalIgnoreCase)
+                        || msg.IndexOf("USB Reconnected successfully", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    TryResumeP5StuckPayment();
+                }
             }
             catch { }
+        }
+
+        public void MarkP5PaymentPending(string merchantOrderNo)
+        {
+            if (string.IsNullOrWhiteSpace(merchantOrderNo)) return;
+            string prev;
+            lock (_p5PendingLock)
+            {
+                prev = _p5PendingMerchantOrderNo;
+                _p5PendingMerchantOrderNo = merchantOrderNo.Trim();
+            }
+            // Charge mới → hủy job query của pending cũ (tránh notify cũ đụng ticket mới).
+            if (!string.IsNullOrEmpty(prev) && !prev.Equals(merchantOrderNo.Trim(), StringComparison.OrdinalIgnoreCase))
+                CreditCardLib.CancelP5PaymentStatusJobPublic(prev);
+
+            LogHelper.SaveLOG_Payment("Mark pending P5 merchant_order_no=" + merchantOrderNo
+                + (string.IsNullOrEmpty(prev) ? "" : " (replaced " + prev + ")"), "P5-PENDING");
+        }
+
+        public void ClearP5PaymentPending(string merchantOrderNo = null)
+        {
+            string cleared = "";
+            lock (_p5PendingLock)
+            {
+                if (!string.IsNullOrEmpty(merchantOrderNo)
+                    && !string.IsNullOrEmpty(_p5PendingMerchantOrderNo)
+                    && !_p5PendingMerchantOrderNo.Equals(merchantOrderNo.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                cleared = _p5PendingMerchantOrderNo;
+                _p5PendingMerchantOrderNo = "";
+            }
+            if (!string.IsNullOrEmpty(cleared))
+            {
+                CreditCardLib.CancelP5PaymentStatusJobPublic(cleared);
+                this.active_interval_check_wlan_payment = false;
+                LogHelper.SaveLOG_Payment("Clear pending P5 merchant_order_no=" + cleared, "P5-PENDING");
+            }
+        }
+
+        public string GetP5PendingMerchantOrderNo()
+        {
+            lock (_p5PendingLock) return _p5PendingMerchantOrderNo ?? "";
+        }
+
+        /// <summary>
+        /// Notify/query cũ chỉ được xử lý nếu còn thuộc phiên charge hiện tại
+        /// (pending, đã có trong paymentList, hoặc đúng curent_order_payment_id đang charge).
+        /// </summary>
+        public bool IsP5MerchantRelevantToCurrentSession(string merchantOrderNo)
+        {
+            if (string.IsNullOrWhiteSpace(merchantOrderNo)) return false;
+            string key = merchantOrderNo.Trim();
+
+            string pending = GetP5PendingMerchantOrderNo();
+            if (!string.IsNullOrEmpty(pending) && pending.Equals(key, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (HasP5PaymentInList(key))
+                return true;
+
+            if (!string.IsNullOrEmpty(this.curent_order_payment_id)
+                && this.curent_order_payment_id.Equals(key, StringComparison.OrdinalIgnoreCase)
+                && frmCreditProcessing != null && !frmCreditProcessing.IsDisposed)
+                return true;
+
+            return false;
+        }
+
+        public bool HasP5PaymentInList(string merchantOrderNo)
+        {
+            if (string.IsNullOrWhiteSpace(merchantOrderNo) || paymentList == null) return false;
+            string key = merchantOrderNo.Trim();
+            foreach (var pm in paymentList)
+            {
+                if (pm == null || pm.responce == null) continue;
+                foreach (var r in pm.responce)
+                {
+                    if (r == null) continue;
+                    if ((!string.IsNullOrEmpty(r.clover_order_id) && r.clover_order_id.Equals(key, StringComparison.OrdinalIgnoreCase))
+                        || (!string.IsNullOrEmpty(r.order_id) && r.order_id.Equals(key, StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Resume ticket P5 bị treo: đã charge (hoặc đang chờ notify) nhưng popup đóng / socket đứt / checkout lỗi.
+        /// Chỉ resume nếu pending còn khớp phiên charge hiện tại — không đụng ticket mới.
+        /// </summary>
+        public void TryResumeP5StuckPayment()
+        {
+            string pending = GetP5PendingMerchantOrderNo();
+            if (string.IsNullOrEmpty(pending)) return;
+
+            // Phiên charge P5: curent_order_payment_id = merchant_order_no lúc bắn lệnh.
+            // Mở Open Sale / ticket mới → curent_order_payment_id đổi thành orderId server → không resume pending cũ.
+            bool sameChargeSession = pending.Equals(this.curent_order_payment_id ?? "", StringComparison.OrdinalIgnoreCase);
+            bool alreadyInCart = HasP5PaymentInList(pending);
+            if (!sameChargeSession && !alreadyInCart)
+            {
+                LogHelper.SaveLOG_Payment(
+                    "Skip resume — pending not in current charge/cart. pending=" + pending
+                    + " current=" + this.curent_order_payment_id, "P5-PENDING");
+                ClearP5PaymentPending(pending);
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _p5ResumeInFlight, 1, 0) != 0) return;
+
+            try
+            {
+                LogHelper.SaveLOG_Payment("Resume stuck P5 ticket. merchant_order_no=" + pending, "P5-PENDING");
+
+                // Đã nhận payment vào cart nhưng checkout lỗi trước đó → chỉ retry checkout.
+                if (alreadyInCart)
+                {
+                    RunOnUi(() =>
+                    {
+                        try
+                        {
+                            CartDisableControl();
+                            CHECK_PAYMENT_CORRECT(true);
+                        }
+                        catch (Exception ex)
+                        {
+                            LogHelper.SaveLOG_Payment(ex.Message, "P5-PENDING Resume checkout Exception");
+                            CartEnableControl();
+                        }
+                        finally
+                        {
+                            Interlocked.Exchange(ref _p5ResumeInFlight, 0);
+                        }
+                    });
+                    return;
+                }
+
+                // Chưa có payment trong list → query lại máy + restart status job.
+                this.active_interval_check_wlan_payment = true;
+                CreditCardLib.ResumeP5PendingPayment(this, pending);
+            }
+            catch (Exception ex)
+            {
+                LogHelper.SaveLOG_Payment(ex.Message, "P5-PENDING TryResume Exception");
+            }
+            finally
+            {
+                if (!HasP5PaymentInList(pending))
+                    Interlocked.Exchange(ref _p5ResumeInFlight, 0);
+            }
         }
 
         public bool CodePay_CheckConnect()
@@ -3164,6 +3359,8 @@ namespace NailsChekin
                 if (e.Command == HeaderCommand.BackOffice)
                 {
                     try { using (var process = new Process()) { process.StartInfo.FileName = Constants.backoffice_url; process.StartInfo.Verb = "open"; process.StartInfo.WindowStyle = ProcessWindowStyle.Maximized; process.Start(); } } catch { }
+                    // Browser lấy focus → HID scanner gõ vào browser/Windows Search thay vì POS.
+                    // Khi user quay lại cửa sổ POS, Activated sẽ EnsureScanKeyboardReady.
                 }
                 if (e.Command == HeaderCommand.BuySupply && !Constants.IS_DEMO_MODE_NOT_ANT_PAY )
                 {
@@ -4186,6 +4383,10 @@ namespace NailsChekin
 
                 ResumeLayout(true);
 
+                // Sau Minimize, Windows có thể giữ focus ở Search/taskbar → scan "chết"
+                // cho đến khi user click lại / restart. Ép sẵn sàng nhận HID ngay khi restore.
+                EnsureScanKeyboardReady();
+
                 // cập nhật lại ảnh nền đã scale (nếu cần)
                 //BeginInvoke((Action)ApplyBackgrounds);
             }
@@ -4310,10 +4511,93 @@ namespace NailsChekin
         private DateTime scanFirstCharTime = DateTime.MinValue;
         private DateTime scanLastCharTime = DateTime.MinValue;
 
-        private const int ScanIdleTimeoutMs = 80;     // scanner ngưng 80ms coi như kết thúc
-        private const int MaxScanCharGapMs = 30;      // tốc độ rất nhanh mới coi là scan
-        private const int MinScanLength = 6;          // barcode tối thiểu
+        // Ngưỡng nới hơn: UI thread bận (API sync) làm DateTime.Now giữa các KeyPress bị “phình”
+        // → avgGap > 30ms → nhầm scan thành typing → mở ItemLookup, nhìn như scan “chết”.
+        private const int ScanIdleTimeoutMs = 120;
+        private const int MaxScanCharGapMs = 55;
+        private const int MinScanLength = 6;
         private bool _enterHandledByCommandKey = false;
+        private bool _scanPipelineBusy = false;
+
+        private void FormMain_ActivatedForScan(object sender, EventArgs e)
+        {
+            if (HasOpenModalDialog())
+                return;
+            EnsureScanKeyboardReady();
+        }
+
+        private void FormMain_DeactivateForScan(object sender, EventArgs e)
+        {
+            // Đang có modal (payment, lookup…) thì giữ buffer; chỉ xóa khi focus ra ngoài app.
+            try
+            {
+                if (timerBarcodeReset != null) timerBarcodeReset.Stop();
+                if (!HasOpenModalDialog())
+                    ResetScanBuffer();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Khôi phục KeyPreview + focus vào control không ăn phím,
+        /// để HID keyboard-wedge luôn vào MainForm_KeyPress.
+        /// </summary>
+        private void EnsureScanKeyboardReady()
+        {
+            if (this.IsDisposed || !this.IsHandleCreated)
+                return;
+            if (this.WindowState == FormWindowState.Minimized)
+                return;
+
+            try
+            {
+                this.KeyPreview = true;
+
+                void apply()
+                {
+                    if (this.IsDisposed || !this.IsHandleCreated) return;
+                    this.KeyPreview = true;
+
+                    // Ưu tiên panel giỏ hàng / nền — không phải TextBox (+ QUICK ITEM)
+                    Control target = null;
+                    if (panelCartItemsTouch != null && !panelCartItemsTouch.IsDisposed)
+                        target = panelCartItemsTouch;
+                    else if (panelBackground != null && !panelBackground.IsDisposed)
+                        target = panelBackground;
+
+                    if (target != null)
+                    {
+                        target.TabStop = true;
+                        if (!target.Focused)
+                            target.Focus();
+                    }
+                    else if (!this.Focused)
+                    {
+                        this.Focus();
+                    }
+                }
+
+                if (this.IsHandleCreated)
+                    this.BeginInvoke((Action)apply);
+                else
+                    apply();
+            }
+            catch { }
+        }
+
+        private bool HasOpenModalDialog()
+        {
+            try
+            {
+                foreach (Form f in Application.OpenForms)
+                {
+                    if (f == null || f == this || f.IsDisposed) continue;
+                    if (f.Modal && f.Visible) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
 
         private void MainForm_KeyPress(object sender, KeyPressEventArgs e)
         {
@@ -4321,13 +4605,17 @@ namespace NailsChekin
                 return;
 
             // Không xử lý Enter trong KeyPress, control char
-            if (e.KeyChar == (char)Keys.Enter || e.KeyChar == '\n')
+            if (e.KeyChar == (char)Keys.Enter || e.KeyChar == '\n' || e.KeyChar == '\r')
             {
                 e.Handled = true;
                 return;
             }
 
             if (char.IsControl(e.KeyChar))
+                return;
+
+            // Đang ShowDialog / pipeline bận: không gom buffer (tránh state bẩn)
+            if (_scanPipelineBusy || HasOpenModalDialog())
                 return;
 
             char ch = e.KeyChar;
@@ -4338,6 +4626,17 @@ namespace NailsChekin
 
             scanBuffer.Append(ch);
             scanLastCharTime = DateTime.Now;
+
+            // Chặn ký tự lọt vào TextBox (+ QUICK ITEM) khi đang nhận chuỗi scan nhanh
+            if (scanBuffer.Length >= 2)
+            {
+                double gap = (scanLastCharTime - scanFirstCharTime).TotalMilliseconds / Math.Max(1, scanBuffer.Length - 1);
+                if (gap <= MaxScanCharGapMs)
+                    e.Handled = true;
+            }
+
+            if (timerBarcodeReset == null)
+                return;
 
             timerBarcodeReset.Stop();
             timerBarcodeReset.Interval = ScanIdleTimeoutMs;
@@ -4357,14 +4656,31 @@ namespace NailsChekin
                 _enterHandledByCommandKey = true;
 
                 string value = scanBuffer.ToString().Trim();
-                scanBuffer.Clear();
+                ResetScanBuffer();
 
                 string valueTyping = typingBuffer.ToString().Trim();
                 typingBuffer.Clear();
 
-                if (!string.IsNullOrWhiteSpace(value) || !string.IsNullOrWhiteSpace(valueTyping))
+                if (timerBarcodeReset != null) timerBarcodeReset.Stop();
+
+                try
                 {
-                    this.SearchItemsByBarcodeOrSKU(value, true, false);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        this.SearchItemsByBarcodeOrSKU(value, true, false);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(valueTyping))
+                    {
+                        this.SearchItemsByBarcodeOrSKU(valueTyping, false, false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("ProcessCmdKey Enter scan error: " + ex);
+                }
+                finally
+                {
+                    EnsureScanKeyboardReady();
                 }
 
                 return true;
@@ -4412,19 +4728,12 @@ namespace NailsChekin
                 ResetScanBuffer();
                 typingBuffer.Clear();
 
-                //FormItemLockup frm = new FormItemLockup(this, "ItemLockUp", typedValue);
-                //frm.StartPosition = FormStartPosition.CenterScreen;
-                //frm.ShowDialog(this);
-                //frm.Dispose();
-
                 using (var frm = new FormItemLockup(this, "ItemLockUp", typedValue))
                 {
                     frm.ShowDialog(this);
                 }
 
-                this.Activate();
-                this.Focus();
-
+                EnsureScanKeyboardReady();
             }
         }
 
@@ -4434,6 +4743,7 @@ namespace NailsChekin
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
+            EnsureScanKeyboardReady();
         }
 
         private void ProcessTypingText(string currentText)
@@ -4445,6 +4755,7 @@ namespace NailsChekin
             frm.StartPosition = FormStartPosition.CenterScreen;
             frm.ShowDialog(this);
             frm.Dispose();
+            EnsureScanKeyboardReady();
         }
 
         private void ResetScanBuffer()
@@ -4476,14 +4787,27 @@ namespace NailsChekin
 
             double avgGap = totalMs / (text.Length - 1);
 
-            return avgGap <= MaxScanCharGapMs;
+            // Chuỗi toàn số dài (UPC/EAN) + tốc độ vừa phải → vẫn coi là scan
+            // (tránh UI lag làm fail MaxScanCharGapMs rồi mở ItemLookup).
+            if (avgGap <= MaxScanCharGapMs)
+                return true;
+
+            bool digitsOnly = true;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (!char.IsDigit(text[i])) { digitsOnly = false; break; }
+            }
+            return digitsOnly && text.Length >= 8 && avgGap <= 100;
         }
 
         private void TimerBarcodeReset_Tick(object sender, EventArgs e)
         {
             timerBarcodeReset.Stop();
 
-            if (Form.ActiveForm != this)
+            // Trước đây: Form.ActiveForm != this → xóa buffer.
+            // AlertForm/pairing non-modal hoặc ActiveForm tạm null làm mất cả chuỗi scan hợp lệ.
+            // Chỉ bỏ qua khi đang modal thật sự / form không sẵn sàng.
+            if (!CanHandleKeyboard() || HasOpenModalDialog() || _scanPipelineBusy)
             {
                 ResetScanBuffer();
                 return;
@@ -4499,24 +4823,34 @@ namespace NailsChekin
             }
 
             string inputText = scanBuffer.ToString().Trim();
-            bool isScan = IsLikelyScan(inputText, scanFirstCharTime, scanLastCharTime);
-
-            if (isScan)
-            {
-                // Là barcode scan -> xử lý ngay
-                this.SearchItemsByBarcodeOrSKU(inputText, true, false);
-
-                // Scan thì tuyệt đối không nhập vào typingBuffer
-            }
-            else
-            {
-                // Không phải scan -> coi là người dùng gõ tay
-                typingBuffer.Append(inputText);
-
-                ProcessTypingBuffer();
-            }
-
+            DateTime first = scanFirstCharTime;
+            DateTime last = scanLastCharTime;
             ResetScanBuffer();
+
+            bool isScan = IsLikelyScan(inputText, first, last);
+
+            try
+            {
+                _scanPipelineBusy = true;
+                if (isScan)
+                {
+                    this.SearchItemsByBarcodeOrSKU(inputText, true, false);
+                }
+                else
+                {
+                    typingBuffer.Append(inputText);
+                    ProcessTypingBuffer();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("TimerBarcodeReset_Tick error: " + ex);
+            }
+            finally
+            {
+                _scanPipelineBusy = false;
+                EnsureScanKeyboardReady();
+            }
         }
 
         private bool CanHandleKeyboard()
@@ -4536,6 +4870,9 @@ namespace NailsChekin
         public string orderSource = "";
         public void AddSaleItemToCard(string orderId, string responce, string paidAmount, string orderSource, List<PaymentModel> priorPayments = null)
         {
+            // Mở ticket khác → bỏ pending P5 của phiên charge cũ (tránh resume/query dính vào đơn mới).
+            this.ClearP5PaymentPending();
+
             this.paidAmount = paidAmount; lbCart_Paided.Text = "$" + paidAmount;
             this.orderSource = orderSource;
 
@@ -4603,6 +4940,9 @@ namespace NailsChekin
         // members: (id, source) — POS / WEB, vì id 2 bảng có thể trùng nên cần source để load đúng.
         public async void LoadCombineToCart(string combineId, List<(string id, string source)> members)
         {
+            // Combine load = phiên mới → clear pending P5 cũ.
+            this.ClearP5PaymentPending();
+
             this.selected_ticket_combine = true;
             this.selected_ticket_combine_id = combineId;
             this.curent_order_payment_id = "0";        // combine gồm nhiều order, không dùng 1 id
@@ -4773,6 +5113,9 @@ namespace NailsChekin
         bool is_search_sku = false;
         public void SearchItemsByBarcodeOrSKU(string search, bool is_search_barcode, bool is_search_sku)
         {
+            if (string.IsNullOrWhiteSpace(search))
+                return;
+
             string responce = null;
             this.is_search_sku = is_search_sku;
 
@@ -4797,14 +5140,16 @@ namespace NailsChekin
                 responce = Utilitys.CALL_API("Product/search", DATA, "POST", true);
             }
 
-            if (responce.StartsWith("Error"))
+            if (string.IsNullOrEmpty(responce) || responce.StartsWith("Error"))
             {
-                CustomMessageBox.Show(responce);
+                CustomMessageBox.Show(string.IsNullOrEmpty(responce) ? "Error API: empty response" : responce);
+                EnsureScanKeyboardReady();
                 return;
             }
 
             this.AddScanItemToCard(responce, Regex.Replace(search, "\r", ""), is_search_barcode);
             this.current_text = "";
+            EnsureScanKeyboardReady();
         }
 
         public void AddScanItemToCard(string responce, string barcode, bool is_search_barcode)
@@ -4819,6 +5164,7 @@ namespace NailsChekin
                 frm.StartPosition = FormStartPosition.CenterScreen;
                 frm.ShowDialog(this);
                 frm.Dispose();
+                EnsureScanKeyboardReady();
                 return;
             }
 
@@ -4863,6 +5209,7 @@ namespace NailsChekin
                 frm.StartPosition = FormStartPosition.CenterScreen;
                 frm.ShowDialog(this);
                 frm.Dispose();
+                EnsureScanKeyboardReady();
             }
         }
 
@@ -5194,10 +5541,10 @@ namespace NailsChekin
 
         public void ResetDefaultFocus()
         {
-            this.BeginInvoke(new Action(() =>
-            {
-                this.current_text = "";
-            }));
+            // Trước đây chỉ clear current_text — không Focus lại → HID dễ lọt vào TextBox
+            // hoặc mất sau dialog. Luôn ép sẵn sàng nhận scan.
+            this.current_text = "";
+            EnsureScanKeyboardReady();
         }
 
         public string Check_Promotion(string item_id, string item_name, string price, string qty, bool is_scan)
@@ -5229,64 +5576,68 @@ namespace NailsChekin
                                 'is_scan': " + (is_scan ? "1" : "0") + @"  
                                 }";
 
-                string responce = Utilitys.CALL_API("Product/checkPromotionV2", jDATA, "POST", true);
-                if (Utilitys.IsValidJson(responce))
+                //2026-06-07 DISABLE FOR TEST !!!
+                if (!Constants.usingNewAPIV2)
                 {
-                    JArray jArray = JArray.Parse(responce);
-                    foreach (var item in jArray)
+                    string responce = Utilitys.CALL_API("Product/checkPromotionV2", jDATA, "POST", true);
+                    if (Utilitys.IsValidJson(responce))
                     {
-                        string id = item["itemId"].ToString();
-                        string name = item["name"].ToString();
-                        string quantity = item["qty"].ToString();
-                        string amount = item["amount"].ToString();
-                        string scheme = item["scheme"].ToString();
-
-                        bool exitst = false;
-                        foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
+                        JArray jArray = JArray.Parse(responce);
+                        foreach (var item in jArray)
                         {
-                            if (control.item_id.Equals(item_id) && control.isPromotion.Equals("1"))
-                            {
-                                control.UpdateQty(quantity, false);
-                                control.UpdatePromotionAmount(amount);
-                                exitst = true;
-                            }
-                        }
+                            string id = item["itemId"].ToString();
+                            string name = item["name"].ToString();
+                            string quantity = item["qty"].ToString();
+                            string amount = item["amount"].ToString();
+                            string scheme = item["scheme"].ToString();
 
-                        if (!exitst)
-                        {
-                            var _content = panelCartItemsTouch.Content;
-                            UCCartItem cardItem = new NailsChekin.UserControl.UCCartItem(this, id, name, amount, quantity, "0", "1", scheme);
-                            cardItem.Width = panelCartItemsTouch.Width - 5;
-                            int shift = cardItem.Height + 5;
-                            _content.SuspendLayout();
-                            try
-                            {
-                                foreach (Control ctrl in _content.Controls)
-                                    ctrl.Location = new Point(ctrl.Location.X, ctrl.Location.Y + shift);
-                                cardItem.Location = new Point(5, 5);
-                                _content.Controls.Add(cardItem);
-                            }
-                            finally { _content.ResumeLayout(); }
-                        }
-
-                        if (!is_scan)  //Điều chỉnh thì cập nhật lại số lượng của item đang thao tác luôn
-                        {
+                            bool exitst = false;
                             foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
                             {
-                                if (control.item_id.Equals(item_id) && control.isPromotion.Equals("0"))
+                                if (control.item_id.Equals(item_id) && control.isPromotion.Equals("1"))
                                 {
-                                    string new_qty = Math.Round(double.Parse(control.quantity) - double.Parse(quantity), 2).ToString();
-                                    control.UpdateQty(new_qty, false);
+                                    control.UpdateQty(quantity, false);
+                                    control.UpdatePromotionAmount(amount);
                                     exitst = true;
                                 }
                             }
+
+                            if (!exitst)
+                            {
+                                var _content = panelCartItemsTouch.Content;
+                                UCCartItem cardItem = new NailsChekin.UserControl.UCCartItem(this, id, name, amount, quantity, "0", "1", scheme);
+                                cardItem.Width = panelCartItemsTouch.Width - 5;
+                                int shift = cardItem.Height + 5;
+                                _content.SuspendLayout();
+                                try
+                                {
+                                    foreach (Control ctrl in _content.Controls)
+                                        ctrl.Location = new Point(ctrl.Location.X, ctrl.Location.Y + shift);
+                                    cardItem.Location = new Point(5, 5);
+                                    _content.Controls.Add(cardItem);
+                                }
+                                finally { _content.ResumeLayout(); }
+                            }
+
+                            if (!is_scan)  //Điều chỉnh thì cập nhật lại số lượng của item đang thao tác luôn
+                            {
+                                foreach (UCCartItem control in panelCartItemsTouch.Content.Controls.OfType<UCCartItem>())
+                                {
+                                    if (control.item_id.Equals(item_id) && control.isPromotion.Equals("0"))
+                                    {
+                                        string new_qty = Math.Round(double.Parse(control.quantity) - double.Parse(quantity), 2).ToString();
+                                        control.UpdateQty(new_qty, false);
+                                        exitst = true;
+                                    }
+                                }
+                            }
                         }
+
+                        this.UpdatePaymentCartAmount(false);
                     }
 
-                    this.UpdatePaymentCartAmount(false);
+                    return responce;
                 }
-
-                return responce;
             }
 
             return "";

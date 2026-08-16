@@ -68,6 +68,9 @@ namespace NailsChekin.Models.Helper
             //PRINTER NAME
             configs += "printer_name: " + Constants.printer_name.ToString() + "\n";
 
+            //USING NEW API V2
+            configs += "chkUsingAPIV2: " + Constants.usingNewAPIV2.ToString() + "\n";
+
             //SURCHANGE
             configs += "chkSurChargeOn: " + Constants.chkSurChargeOn.ToString() + "\n";
             configs += "chkSurChargeOff: " + Constants.chkSurChargeOff.ToString() + "\n";
@@ -202,9 +205,10 @@ namespace NailsChekin.Models.Helper
 
             Constants.quickmenu_option = ConfigLocalHelper.GetConfig("quickmenu_option", Constants.quickmenu_option_default);
             
-            Constants.tax_percent = ConfigLocalHelper.GetConfig("tax_percent", "0");
-            Constants.chkTaxOn = ConfigLocalHelper.GetConfig("chkTaxOn", false);
-            Constants.chkTaxOff = ConfigLocalHelper.GetConfig("chkTaxOff", false);
+            // TAX: đọc từ file config (FormSetting SaveAllConfig ghi ra file).
+            Constants.tax_percent = Utilitys.GetConfig("tax_percent", "0");
+            Constants.chkTaxOn = Utilitys.GetConfig("chkTaxOn", false);
+            Constants.chkTaxOff = Utilitys.GetConfig("chkTaxOff", false);
 
             Constants.turn_system_cloumn_show = ConfigLocalHelper.GetConfig("turn_system_cloumn_show", "15");
             Constants.web_print_acrobatURL = ConfigLocalHelper.GetConfig("web_print_acrobatURL", Constants.web_print_acrobatURL_default);
@@ -224,30 +228,42 @@ namespace NailsChekin.Models.Helper
             // Receipt Print Setting
             Constants.chkReceiptCusCheckin = Utilitys.GetConfig("chkReceiptCusCheckin", false);
             Constants.chkShowPopupConfirmBill = Utilitys.GetConfig("chkShowPopupConfirmBill", false);
+            Constants.receiptFooter = Utilitys.GetConfig("receiptFooter", Constants.receiptFooter ?? "");
 
             //Pincode
             Constants.chkPincodeOn = Utilitys.GetConfig("chkPincodeOn", false);
             Constants.chkPincodeOff = Utilitys.GetConfig("chkPincodeOff", true);
+
+            //Using New API V2 (mặc định OFF -> host cũ)
+            Constants.usingNewAPIV2 = Utilitys.GetConfig("chkUsingAPIV2", false);
 
             if (load_from_api)
             {
                 string responce = Utilitys.CALL_API("Store/getStoreSetting", "", "GET", true);
                 if (!responce.StartsWith("Error"))
                 {
-                    string credit_setting_on = JObject.Parse(responce)["credit_setting_on"].ToString();
-
-                    string tax_setting_on = JObject.Parse(responce)["tax_setting_on"].ToString();
-                    string tax_percent = JObject.Parse(responce)["tax_percent"].ToString();
-
-                    string receipt_footer = JObject.Parse(responce)["receipt_footer"].ToString();
+                    var jObj = JObject.Parse(responce);
+                    string credit_setting_on = jObj["credit_setting_on"]?.ToString() ?? "0";
+                    string tax_setting_on = jObj["tax_setting_on"]?.ToString() ?? "0";
+                    string tax_percent = jObj["tax_percent"]?.ToString() ?? "0";
+                    string receipt_footer = jObj["receipt_footer"]?.ToString() ?? "";
 
                     Constants.using_system_credit = credit_setting_on.Equals("1") ? "ON" : "OFF";
 
-                    Constants.tax_percent = tax_percent;
-                    Constants.chkTaxOn = tax_setting_on.Equals("1") ? true : false;
-                    Constants.chkTaxOff = tax_setting_on.Equals("1") ? false : true;
+                    // TAX: local đã Save là nguồn đúng — không để server (vd 8.875) đè lại.
+                    // Chỉ lấy tax từ API khi máy chưa từng lưu tax_percent (cài mới / file trống).
+                    string localTaxRaw = Utilitys.RedConfig("tax_percent");
+                    if (string.IsNullOrWhiteSpace(localTaxRaw))
+                    {
+                        Constants.tax_percent = tax_percent;
+                        Constants.chkTaxOn = tax_setting_on.Equals("1");
+                        Constants.chkTaxOff = !tax_setting_on.Equals("1");
+                    }
 
-                    Constants.receiptFooter = receipt_footer;
+                    // Footer: tương tự TAX — ưu tiên local đã Save.
+                    string localFooterRaw = Utilitys.RedConfig("receiptFooter");
+                    if (string.IsNullOrWhiteSpace(localFooterRaw))
+                        Constants.receiptFooter = receipt_footer;
                 }
             }
 
